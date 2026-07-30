@@ -37,8 +37,9 @@ export class Receiver {
     this.downloadBlobUrl = null;
     this.decryptedText = null;
 
+    this.camerasDetected = false;
+
     this.initEventListeners();
-    this.detectCameras();
   }
 
   initEventListeners() {
@@ -96,6 +97,11 @@ export class Receiver {
   }
 
   async startCamera() {
+    if (!this.camerasDetected) {
+      await this.detectCameras();
+      this.camerasDetected = true;
+    }
+
     const deviceId = this.cameraSelect.value;
     const constraints = {
       video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'environment' }
