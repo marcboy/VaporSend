@@ -26,6 +26,7 @@ export class Receiver {
     this.percentageText = document.getElementById('recv-percentage');
     this.progressBar = document.getElementById('recv-progress-bar');
     this.chunksGrid = document.getElementById('chunks-grid');
+    this.chunkInfoLabel = document.getElementById('chunk-info-label');
     
     this.resultCard = document.getElementById('result-card');
     this.resultTitle = document.getElementById('result-title');
@@ -206,6 +207,22 @@ export class Receiver {
       const box = document.createElement('div');
       box.className = 'chunk-box';
       box.id = `chunk-box-${i}`;
+      box.title = `Chunk ${i + 1}: Missing`;
+      
+      // Interactive hover & click helper
+      const updateLabel = () => {
+        const received = !!this.chunksReceived[i];
+        this.chunkInfoLabel.textContent = `Chunk #${i + 1}: ${received ? 'Received ✓' : 'Missing ✗'}`;
+        this.chunkInfoLabel.style.color = received ? 'var(--success)' : 'var(--error)';
+      };
+      
+      box.addEventListener('mouseenter', updateLabel);
+      box.addEventListener('click', updateLabel);
+      box.addEventListener('mouseleave', () => {
+        this.chunkInfoLabel.textContent = 'Hover/Click a chunk to inspect';
+        this.chunkInfoLabel.style.color = 'var(--text-muted)';
+      });
+      
       this.chunksGrid.appendChild(box);
     }
     
@@ -217,6 +234,7 @@ export class Receiver {
       const box = document.getElementById(`chunk-box-${newlyReceivedIndex}`);
       if (box) {
         box.classList.add('received');
+        box.title = `Chunk ${newlyReceivedIndex + 1}: Received`;
       }
     }
     

@@ -606,12 +606,25 @@ input[type="range"]::-webkit-slider-thumb:hover {
   margin-top: 6px;
 }
 
-.chunks-grid-container label {
+.grid-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.grid-header label {
   font-size: 0.75rem;
   color: var(--text-secondary);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.chunk-info-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  transition: color 0.2s ease;
 }
 
 .chunks-grid {
@@ -631,7 +644,18 @@ input[type="range"]::-webkit-slider-thumb:hover {
   border-radius: 2px;
   background-color: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.03);
-  transition: background-color 0.2s ease;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.chunk-box:hover {
+  transform: scale(1.15);
+  border-color: rgba(99, 102, 241, 0.5);
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+.chunk-box.received:hover {
+  background-color: #059669;
 }
 
 .chunk-box.received {
