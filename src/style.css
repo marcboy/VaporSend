@@ -395,12 +395,12 @@ textarea:focus {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 280px;
+  min-height: 330px;
 }
 
 #sender-qr-canvas {
   width: 100% !important;
-  max-width: 260px !important;
+  max-width: 312px !important;
   height: auto !important;
   image-rendering: pixelated;
 }
