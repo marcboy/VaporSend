@@ -743,3 +743,12 @@ input[type="range"]::-webkit-slider-thumb:hover {
     height: 160px;
   }
 }
+
+/* Footer Styling */
+.app-footer {
+  text-align: center;
+  margin-top: 10px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
