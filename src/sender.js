@@ -142,7 +142,8 @@ export class Sender {
       
     this.isPlaying = false;
     this.currentIndex = 0;
-    this.play();
+    this.updateUI();
+    this.pause(); // Initialize in paused state to let user start manually
   }
 
   stopStreaming() {
@@ -192,12 +193,12 @@ export class Sender {
   }
 
   play() {
-    if (this.isPlaying) return;
     this.isPlaying = true;
     this.btnPlayPause.textContent = 'Pause';
     this.btnPlayPause.classList.remove('btn-secondary');
     this.btnPlayPause.classList.add('btn-primary');
     
+    if (this.playInterval) clearInterval(this.playInterval);
     this.playInterval = setInterval(() => {
       this.currentIndex = (this.currentIndex + 1) % this.chunks.length;
       this.updateUI();
@@ -205,14 +206,15 @@ export class Sender {
   }
 
   pause() {
-    if (!this.isPlaying) return;
     this.isPlaying = false;
-    this.btnPlayPause.textContent = 'Play';
+    this.btnPlayPause.textContent = 'Start / Resume';
     this.btnPlayPause.classList.remove('btn-primary');
     this.btnPlayPause.classList.add('btn-secondary');
     
-    clearInterval(this.playInterval);
-    this.playInterval = null;
+    if (this.playInterval) {
+      clearInterval(this.playInterval);
+      this.playInterval = null;
+    }
   }
 
   togglePlay() {
