@@ -143,7 +143,12 @@ export class Sender {
     this.isPlaying = false;
     this.currentIndex = 0;
     this.updateUI();
-    this.pause(); // Initialize in paused state to let user start manually
+    
+    if (this.chunks.length === 1) {
+      this.play(); // Auto-start immediately since there is only one QR frame
+    } else {
+      this.pause(); // Start paused to allow time to align camera for multi-frame sequences
+    }
   }
 
   stopStreaming() {
