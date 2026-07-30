@@ -456,7 +456,7 @@ textarea:focus {
 
 .setting-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 16px;
   border-top: 1px solid var(--border-color);
   padding-top: 14px;

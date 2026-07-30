@@ -12,6 +12,7 @@ export class Sender {
     // UI Settings
     this.fps = 10;
     this.chunkSize = 400; // Character capacity per QR code
+    this.encoding = 'base45'; // Encoding format: base45 or base64
     this.filename = '';
     this.rawContent = null; // Can be string (text) or ArrayBuffer (file)
 
@@ -35,6 +36,7 @@ export class Sender {
     this.btnNext = document.getElementById('btn-next-chunk');
     this.speedSlider = document.getElementById('speed-slider');
     this.chunkSizeSlider = document.getElementById('chunk-size-slider');
+    this.encodingSelect = document.getElementById('encoding-select');
 
     this.initEventListeners();
   }
@@ -115,6 +117,17 @@ export class Sender {
         if (wasPlaying) this.play();
       }
     });
+
+    this.encodingSelect.addEventListener('change', (e) => {
+      this.encoding = e.target.value;
+      // Re-split if content is active
+      if (this.rawContent) {
+        const wasPlaying = this.isPlaying;
+        this.pause();
+        this.generateChunks();
+        if (wasPlaying) this.play();
+      }
+    });
   }
 
   handleFileSelected(file) {
@@ -163,7 +176,7 @@ export class Sender {
 
   generateChunks() {
     if (!this.rawContent) return;
-    this.chunks = prepareChunks(this.rawContent, this.filename, this.chunkSize);
+    this.chunks = prepareChunks(this.rawContent, this.filename, this.chunkSize, this.encoding);
     this.currentIndex = Math.min(this.currentIndex, this.chunks.length - 1);
     this.updateUI();
   }

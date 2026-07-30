@@ -135,6 +135,13 @@
                 <label for="chunk-size-slider">QR Capacity (Chars)</label>
                 <input type="range" id="chunk-size-slider" min="100" max="1000" step="50" value="400">
               </div>
+              <div class="setting-item">
+                <label for="encoding-select">Encoding</label>
+                <select id="encoding-select" class="select-input" style="max-width: 100%; height: 32px; padding: 2px 8px; font-size: 0.8rem;">
+                  <option value="base45" selected>Base45 (Fast QR)</option>
+                  <option value="base64">Base64 (Byte Mode)</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>
@@ -205,7 +212,7 @@
     </main>
 
     <footer class="app-footer">
-      <p>v1.0.5 &bull; Built on 2026-07-30 16:33 PDT</p>
+      <p>v1.0.6 &bull; Built on 2026-07-30 16:34 PDT</p>
     </footer>
   </div>
   

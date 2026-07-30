@@ -194,6 +194,7 @@ export class Receiver {
     this.currentSessionId = chunk.sessionId;
     this.totalChunks = chunk.total;
     this.filename = chunk.filename;
+    this.encoding = chunk.encoding;
     this.chunksReceived = {};
     this.isFinished = false;
     
@@ -258,7 +259,7 @@ export class Receiver {
       for (let i = 0; i < this.totalChunks; i++) {
         orderedChunks.push(this.chunksReceived[i]);
       }
-      const decompressedData = reconstructData(orderedChunks);
+      const decompressedData = reconstructData(orderedChunks, this.encoding);
       
       this.resultDetails.innerHTML = '';
       
