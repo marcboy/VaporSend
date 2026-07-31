@@ -115,6 +115,7 @@ export class Sender {
       if (this.rawContent) {
         const wasPlaying = this.isPlaying;
         this.pause();
+        this.currentIndex = 0;
         this.generateChunks();
         if (wasPlaying) this.play();
       }
@@ -126,6 +127,7 @@ export class Sender {
       if (this.rawContent) {
         const wasPlaying = this.isPlaying;
         this.pause();
+        this.currentIndex = 0;
         this.generateChunks();
         if (wasPlaying) this.play();
       }
@@ -137,6 +139,7 @@ export class Sender {
       if (this.rawContent) {
         const wasPlaying = this.isPlaying;
         this.pause();
+        this.currentIndex = 0;
         this.generateChunks();
         if (wasPlaying) this.play();
       }
