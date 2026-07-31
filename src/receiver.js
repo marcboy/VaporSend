@@ -154,15 +154,35 @@ export class Receiver {
     if (this.video.readyState === this.video.HAVE_ENOUGH_DATA) {
       // Draw video frame to hidden canvas
       this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
-      const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
       
-      // Attempt decoding
-      const code = jsQR(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: 'dontInvert'
-      });
+      let attempts = 0;
+      const maxQRsPerFrame = 4; // Scan up to 4 QRs side-by-side in one frame
       
-      if (code && code.data) {
-        this.handleDecodedQR(code.data);
+      while (attempts < maxQRsPerFrame) {
+        const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+        
+        // Attempt decoding
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: 'dontInvert'
+        });
+        
+        if (code && code.data) {
+          this.handleDecodedQR(code.data);
+          
+          // Redact the scanned QR code area with a white polygon to find the next ones
+          this.ctx.fillStyle = '#ffffff';
+          this.ctx.beginPath();
+          this.ctx.moveTo(code.location.topLeftCorner.x, code.location.topLeftCorner.y);
+          this.ctx.lineTo(code.location.topRightCorner.x, code.location.topRightCorner.y);
+          this.ctx.lineTo(code.location.bottomRightCorner.x, code.location.bottomRightCorner.y);
+          this.ctx.lineTo(code.location.bottomLeftCorner.x, code.location.bottomLeftCorner.y);
+          this.ctx.closePath();
+          this.ctx.fill();
+          
+          attempts++;
+        } else {
+          break; // No more QR codes detected
+        }
       }
     }
     

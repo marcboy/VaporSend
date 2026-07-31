@@ -13,6 +13,7 @@ export class Sender {
     this.fps = 10;
     this.chunkSize = 400; // Character capacity per QR code
     this.encoding = 'base45'; // Encoding format: base45 or base64
+    this.gridSize = 1; // Number of QRs to show simultaneously
     this.filename = '';
     this.rawContent = null; // Can be string (text) or ArrayBuffer (file)
 
@@ -25,7 +26,7 @@ export class Sender {
     this.btnCancel = document.getElementById('btn-cancel-send');
     
     this.streamContainer = document.getElementById('sender-stream-container');
-    this.qrCanvas = document.getElementById('sender-qr-canvas');
+    this.qrContainer = document.getElementById('sender-qr-container');
     this.transferTitle = document.getElementById('transfer-title');
     this.chunkIndexIndicator = document.getElementById('chunk-index-indicator');
     this.fpsIndicator = document.getElementById('fps-indicator');
@@ -37,6 +38,7 @@ export class Sender {
     this.speedSlider = document.getElementById('speed-slider');
     this.chunkSizeSlider = document.getElementById('chunk-size-slider');
     this.encodingSelect = document.getElementById('encoding-select');
+    this.gridSelect = document.getElementById('grid-select');
 
     this.initEventListeners();
   }
@@ -128,6 +130,17 @@ export class Sender {
         if (wasPlaying) this.play();
       }
     });
+
+    this.gridSelect.addEventListener('change', (e) => {
+      this.gridSize = parseInt(e.target.value, 10);
+      // Re-split if content is active
+      if (this.rawContent) {
+        const wasPlaying = this.isPlaying;
+        this.pause();
+        this.generateChunks();
+        if (wasPlaying) this.play();
+      }
+    });
   }
 
   handleFileSelected(file) {
@@ -157,8 +170,9 @@ export class Sender {
     this.currentIndex = 0;
     this.updateUI();
     
-    if (this.chunks.length === 1) {
-      this.play(); // Auto-start immediately since there is only one QR frame
+    const totalSteps = Math.ceil(this.chunks.length / this.gridSize);
+    if (totalSteps === 1) {
+      this.play(); // Auto-start immediately since there is only one frame set
     } else {
       this.pause(); // Start paused to allow time to align camera for multi-frame sequences
     }
@@ -183,28 +197,44 @@ export class Sender {
 
   async renderCurrentQR() {
     if (this.chunks.length === 0) return;
-    const text = this.chunks[this.currentIndex];
     
-    try {
-      await QRCode.toCanvas(this.qrCanvas, text, {
-        width: 320,
-        margin: 1,
-        color: {
-          dark: '#000000',
-          light: '#ffffff'
-        },
-        errorCorrectionLevel: 'M' // Medium is ideal: high density but reliable scanning
-      });
-    } catch (err) {
-      console.error('Failed to generate QR Code:', err);
+    this.qrContainer.innerHTML = '';
+    this.qrContainer.className = `qr-display-area cols-${this.gridSize}`;
+    
+    const startIdx = this.currentIndex * this.gridSize;
+    const endIdx = Math.min(startIdx + this.gridSize, this.chunks.length);
+    
+    for (let i = startIdx; i < endIdx; i++) {
+      const canvas = document.createElement('canvas');
+      canvas.className = 'qr-canvas-item';
+      this.qrContainer.appendChild(canvas);
+      
+      const text = this.chunks[i];
+      try {
+        await QRCode.toCanvas(canvas, text, {
+          width: 320,
+          margin: 1,
+          color: {
+            dark: '#000000',
+            light: '#ffffff'
+          },
+          errorCorrectionLevel: 'M'
+        });
+      } catch (err) {
+        console.error('Failed to generate QR Code:', err);
+      }
     }
   }
 
   updateUI() {
     if (this.chunks.length === 0) return;
     
-    this.chunkIndexIndicator.textContent = `Chunk ${this.currentIndex + 1} of ${this.chunks.length}`;
-    const percent = ((this.currentIndex + 1) / this.chunks.length) * 100;
+    const totalSteps = Math.ceil(this.chunks.length / this.gridSize);
+    const startIdx = this.currentIndex * this.gridSize;
+    const endIdx = Math.min(startIdx + this.gridSize, this.chunks.length);
+    
+    this.chunkIndexIndicator.textContent = `Step ${this.currentIndex + 1} of ${totalSteps} (Chunks ${startIdx + 1}-${endIdx} of ${this.chunks.length})`;
+    const percent = ((this.currentIndex + 1) / totalSteps) * 100;
     this.progressBar.style.width = `${percent}%`;
     
     this.renderCurrentQR();
@@ -216,9 +246,11 @@ export class Sender {
     this.btnPlayPause.classList.remove('btn-secondary');
     this.btnPlayPause.classList.add('btn-primary');
     
+    const totalSteps = Math.ceil(this.chunks.length / this.gridSize);
+    
     if (this.playInterval) clearInterval(this.playInterval);
     this.playInterval = setInterval(() => {
-      this.currentIndex = (this.currentIndex + 1) % this.chunks.length;
+      this.currentIndex = (this.currentIndex + 1) % totalSteps;
       this.updateUI();
     }, 1000 / this.fps);
   }
@@ -245,13 +277,15 @@ export class Sender {
 
   prevChunk() {
     this.pause();
-    this.currentIndex = (this.currentIndex - 1 + this.chunks.length) % this.chunks.length;
+    const totalSteps = Math.ceil(this.chunks.length / this.gridSize);
+    this.currentIndex = (this.currentIndex - 1 + totalSteps) % totalSteps;
     this.updateUI();
   }
 
   nextChunk() {
     this.pause();
-    this.currentIndex = (this.currentIndex + 1) % this.chunks.length;
+    const totalSteps = Math.ceil(this.chunks.length / this.gridSize);
+    this.currentIndex = (this.currentIndex + 1) % totalSteps;
     this.updateUI();
   }
 }

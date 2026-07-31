@@ -392,17 +392,35 @@ textarea:focus {
   background-color: white;
   padding: 16px;
   border-radius: var(--border-radius-md);
-  display: flex;
+  display: grid;
+  gap: 12px;
   justify-content: center;
   align-items: center;
   min-height: 330px;
+  width: 100%;
 }
 
-#sender-qr-canvas {
+.qr-display-area.cols-1 {
+  grid-template-columns: 1fr;
+}
+.qr-display-area.cols-2 {
+  grid-template-columns: 1fr 1fr;
+}
+.qr-display-area.cols-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+.qr-display-area.cols-4 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.qr-canvas-item {
   width: 100% !important;
   max-width: 312px !important;
   height: auto !important;
+  aspect-ratio: 1;
   image-rendering: pixelated;
+  border: 1px solid #f3f4f6;
+  border-radius: 4px;
 }
 
 /* Progress bar */
