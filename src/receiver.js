@@ -19,7 +19,10 @@ export class Receiver {
     this.canvas = document.getElementById('camera-canvas');
     this.ctx = this.canvas.getContext('2d');
     this.cameraSelect = document.getElementById('camera-select');
+    this.btnToggleMirror = document.getElementById('btn-toggle-mirror');
     this.btnToggleCamera = document.getElementById('btn-toggle-camera');
+    
+    this.isMirrored = false;
     
     this.progressPanel = document.getElementById('receive-progress-panel');
     this.fileInfoText = document.getElementById('recv-file-info');
@@ -44,6 +47,7 @@ export class Receiver {
   }
 
   initEventListeners() {
+    this.btnToggleMirror?.addEventListener('click', () => this.toggleMirror());
     this.btnToggleCamera.addEventListener('click', () => this.toggleCamera());
     this.cameraSelect.addEventListener('change', () => {
       if (this.stream) {
@@ -89,6 +93,17 @@ export class Receiver {
     }
   }
 
+  toggleMirror() {
+    this.isMirrored = !this.isMirrored;
+    if (this.isMirrored) {
+      this.video.classList.add('mirrored');
+      if (this.btnToggleMirror) this.btnToggleMirror.classList.add('btn-primary');
+    } else {
+      this.video.classList.remove('mirrored');
+      if (this.btnToggleMirror) this.btnToggleMirror.classList.remove('btn-primary');
+    }
+  }
+
   async toggleCamera() {
     if (this.stream) {
       this.stopCamera();
@@ -107,6 +122,19 @@ export class Receiver {
     const constraints = {
       video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'environment' }
     };
+    
+    // Auto-detect front camera (selfie camera) and auto-mirror if user hasn't explicitly set mirror mode
+    const selectedOption = this.cameraSelect.options[this.cameraSelect.selectedIndex];
+    const label = selectedOption ? selectedOption.textContent.toLowerCase() : '';
+    if (label.includes('front') || label.includes('user') || label.includes('facetime')) {
+      this.isMirrored = true;
+      this.video.classList.add('mirrored');
+      if (this.btnToggleMirror) this.btnToggleMirror.classList.add('btn-primary');
+    } else if (label.includes('back') || label.includes('environment')) {
+      this.isMirrored = false;
+      this.video.classList.remove('mirrored');
+      if (this.btnToggleMirror) this.btnToggleMirror.classList.remove('btn-primary');
+    }
     
     try {
       this.stream = await navigator.mediaDevices.getUserMedia(constraints);
