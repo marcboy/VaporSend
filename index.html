@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script type="module" crossorigin src="/VaporSend/assets/index-BkIzBS2C.js"></script>
-  <link rel="stylesheet" crossorigin href="/VaporSend/assets/index-BeKzvBgE.css">
+  <script type="module" crossorigin src="/VaporSend/assets/index-CCYh9eMM.js"></script>
+  <link rel="stylesheet" crossorigin href="/VaporSend/assets/index-DRjtPnnZ.css">
 </head>
 <body>
   <div class="app-container">
@@ -103,7 +103,7 @@
           <div class="stream-progress-container">
             <div class="stream-stats">
               <span id="chunk-index-indicator">Chunk 0 / 0</span>
-              <span id="fps-indicator">10 FPS</span>
+              <span id="fps-indicator">8 FPS</span>
             </div>
             <div class="progress-bar-outer">
               <div class="progress-bar-inner" id="send-progress-bar" style="width: 0%;"></div>
@@ -130,11 +130,11 @@
             <div class="setting-row">
               <div class="setting-item">
                 <label for="speed-slider">Speed (FPS)</label>
-                <input type="range" id="speed-slider" min="1" max="20" value="10">
+                <input type="range" id="speed-slider" min="1" max="20" value="8">
               </div>
               <div class="setting-item">
                 <label for="chunk-size-slider">QR Capacity (Chars)</label>
-                <input type="range" id="chunk-size-slider" min="100" max="1000" step="50" value="400">
+                <input type="range" id="chunk-size-slider" min="50" max="1000" step="50" value="250">
               </div>
               <div class="setting-item">
                 <label for="encoding-select">Encoding</label>
@@ -150,6 +150,13 @@
                   <option value="2">2 QRs (1x2)</option>
                   <option value="3">3 QRs (1x3)</option>
                   <option value="4">4 QRs (2x2)</option>
+                </select>
+              </div>
+              <div class="setting-item">
+                <label for="antiglare-select">Screen Mode</label>
+                <select id="antiglare-select" class="select-input" style="max-width: 100%; height: 32px; padding: 2px 8px; font-size: 0.8rem;">
+                  <option value="antiglare" selected>Anti-Glare (Webcam)</option>
+                  <option value="bright">Full Bright White</option>
                 </select>
               </div>
             </div>
@@ -180,12 +187,22 @@
             <button class="btn btn-secondary btn-sm" id="btn-toggle-camera">Start Camera</button>
           </div>
 
+          <div class="scanner-tuning-bar">
+            <div class="zoom-control">
+              <label for="camera-zoom-slider">Zoom: <span id="zoom-value-label">1.0x</span></label>
+              <input type="range" id="camera-zoom-slider" min="1" max="3" step="0.25" value="1">
+            </div>
+            <button class="btn btn-secondary btn-sm btn-primary" id="btn-toggle-contrast" title="Boost contrast to cut through phone screen glare">
+              Anti-Glare Boost: ON
+            </button>
+          </div>
+
           <div class="video-viewport">
             <video id="camera-video" playsinline></video>
             <canvas id="camera-canvas" class="hidden"></canvas>
             <div class="scanner-overlay">
               <div class="scanner-reticle"></div>
-              <p class="scanner-instruction">Point camera at the animated QR code</p>
+              <p class="scanner-instruction">Hold phone ~1–1.5 ft away for sharp focus &bull; Lower phone brightness</p>
             </div>
           </div>
 
@@ -231,7 +248,7 @@
     </main>
 
     <footer class="app-footer">
-      <p>v1.0.9 &bull; Built on 2026-08-10 08:05 PDT</p>
+      <p>v1.0.11 &bull; Built on 2026-11-15 03:21 PST</p>
     </footer>
   </div>
   
