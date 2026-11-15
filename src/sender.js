@@ -1,5 +1,5 @@
 import QRCode from 'qrcode';
-import { prepareChunks } from './compress';
+import { prepareChunks, createFountainChunk } from './compress';
 
 export class Sender {
   constructor() {
@@ -15,6 +15,11 @@ export class Sender {
     this.encoding = 'base45'; // Encoding format: base45 or base64
     this.gridSize = 1; // Number of QRs to show simultaneously
     this.antiGlare = true; // Dim white background slightly to prevent webcam exposure blowout
+    this.fountainMode = 'smart'; // 'smart' (after pass 1), 'always', or 'off'
+    this.selectedChunks = new Set(); // Optional manual subset of chunk indices to loop
+    this.completedPasses = 0;
+    this.repairCounter = 0;
+    this.isShowingRepairStep = false;
     this.filename = '';
     this.rawContent = null; // Can be string (text) or ArrayBuffer (file)
 
@@ -32,6 +37,9 @@ export class Sender {
     this.chunkIndexIndicator = document.getElementById('chunk-index-indicator');
     this.fpsIndicator = document.getElementById('fps-indicator');
     this.progressBar = document.getElementById('send-progress-bar');
+    this.senderChunksGrid = document.getElementById('sender-chunks-grid');
+    this.senderFilterLabel = document.getElementById('sender-filter-label');
+    this.btnResetSenderFilter = document.getElementById('btn-reset-sender-filter');
     
     this.btnPrev = document.getElementById('btn-prev-chunk');
     this.btnPlayPause = document.getElementById('btn-play-pause');
@@ -41,6 +49,7 @@ export class Sender {
     this.encodingSelect = document.getElementById('encoding-select');
     this.gridSelect = document.getElementById('grid-select');
     this.antiGlareSelect = document.getElementById('antiglare-select');
+    this.fountainSelect = document.getElementById('fountain-select');
 
     this.initEventListeners();
   }
@@ -151,6 +160,115 @@ export class Sender {
       this.antiGlare = e.target.value === 'antiglare';
       this.renderCurrentQR();
     });
+
+    this.fountainSelect?.addEventListener('change', (e) => {
+      this.fountainMode = e.target.value;
+      this.isShowingRepairStep = false;
+      this.updateUI();
+    });
+
+    this.btnResetSenderFilter?.addEventListener('click', () => {
+      this.selectedChunks.clear();
+      this.currentIndex = 0;
+      this.isShowingRepairStep = false;
+      this.updateSenderFilterUI();
+      this.updateUI();
+    });
+  }
+
+  getActiveChunkIndices() {
+    if (this.selectedChunks.size > 0) {
+      return Array.from(this.selectedChunks).sort((a, b) => a - b);
+    }
+    return this.chunks.map((_, idx) => idx);
+  }
+
+  buildSenderGrid() {
+    if (!this.senderChunksGrid) return;
+    this.senderChunksGrid.innerHTML = '';
+
+    for (let i = 0; i < this.chunks.length; i++) {
+      const box = document.createElement('button');
+      box.type = 'button';
+      box.className = 'chunk-box sender-chunk-box';
+      box.id = `sender-chunk-box-${i}`;
+      box.textContent = `${i + 1}`;
+      box.title = `Tap to loop only Chunk #${i + 1}`;
+
+      box.addEventListener('click', () => {
+        if (this.selectedChunks.has(i)) {
+          this.selectedChunks.delete(i);
+        } else {
+          this.selectedChunks.add(i);
+        }
+        this.currentIndex = 0;
+        this.isShowingRepairStep = false;
+        this.updateSenderFilterUI();
+        this.updateUI();
+      });
+
+      this.senderChunksGrid.appendChild(box);
+    }
+
+    this.updateSenderFilterUI();
+  }
+
+  updateSenderFilterUI() {
+    const hasFilter = this.selectedChunks.size > 0;
+    if (this.btnResetSenderFilter) {
+      this.btnResetSenderFilter.classList.toggle('hidden', !hasFilter);
+    }
+    if (this.senderFilterLabel) {
+      if (hasFilter) {
+        const list = Array.from(this.selectedChunks).sort((a, b) => a - b).map(i => `#${i + 1}`).join(', ');
+        this.senderFilterLabel.textContent = `Looping ONLY (${this.selectedChunks.size}): ${list}`;
+        this.senderFilterLabel.style.color = 'var(--accent-color)';
+      } else {
+        this.senderFilterLabel.textContent = 'Tap chunks below to loop only missing ones';
+        this.senderFilterLabel.style.color = 'var(--text-secondary)';
+      }
+    }
+
+    for (let i = 0; i < this.chunks.length; i++) {
+      const box = document.getElementById(`sender-chunk-box-${i}`);
+      if (box) {
+        box.classList.toggle('selected-filter', this.selectedChunks.has(i));
+      }
+    }
+  }
+
+  highlightActiveSenderChunks(activeIndices, isFountain = false) {
+    for (let i = 0; i < this.chunks.length; i++) {
+      const box = document.getElementById(`sender-chunk-box-${i}`);
+      if (box) {
+        const isActive = activeIndices.includes(i);
+        box.classList.toggle('active-sending', isActive && !isFountain);
+        box.classList.toggle('active-fountain', isActive && isFountain);
+      }
+    }
+  }
+
+  pickFountainIndices(pool) {
+    const L = pool.length;
+    if (L < 2) return pool.slice();
+
+    const r = this.repairCounter++;
+    // Alternate between degree-2 pairs and degree-3 triples (when L >= 3)
+    const useTriple = L >= 3 && (r % 3 === 2);
+    const stride = (Math.floor(r / L) % (L - 1)) + 1;
+
+    const i1 = pool[r % L];
+    const i2 = pool[(r + stride) % L];
+    if (!useTriple) {
+      return [i1, i2].sort((a, b) => a - b);
+    }
+
+    const i3 = pool[(r + stride * 2 + 1) % L];
+    const unique = Array.from(new Set([i1, i2, i3]));
+    if (unique.length < 2) {
+      return [pool[0], pool[1]].sort((a, b) => a - b);
+    }
+    return unique.sort((a, b) => a - b);
   }
 
   handleFileSelected(file) {
@@ -201,26 +319,25 @@ export class Sender {
   generateChunks() {
     if (!this.rawContent) return;
     this.chunks = prepareChunks(this.rawContent, this.filename, this.chunkSize, this.encoding);
-    this.currentIndex = Math.min(this.currentIndex, this.chunks.length - 1);
+    this.selectedChunks.clear();
+    this.completedPasses = 0;
+    this.repairCounter = 0;
+    this.isShowingRepairStep = false;
+    this.currentIndex = 0;
+    this.buildSenderGrid();
     this.updateUI();
   }
 
-  async renderCurrentQR() {
-    if (this.chunks.length === 0) return;
-    
+  async renderPayloadsToQR(payloads) {
     this.qrContainer.innerHTML = '';
     this.qrContainer.className = `qr-display-area cols-${this.gridSize}${this.antiGlare ? ' antiglare' : ''}`;
-    
-    const startIdx = this.currentIndex * this.gridSize;
-    const endIdx = Math.min(startIdx + this.gridSize, this.chunks.length);
     const lightColor = this.antiGlare ? '#d1d5db' : '#ffffff';
-    
-    for (let i = startIdx; i < endIdx; i++) {
+
+    for (const text of payloads) {
       const canvas = document.createElement('canvas');
       canvas.className = 'qr-canvas-item';
       this.qrContainer.appendChild(canvas);
-      
-      const text = this.chunks[i];
+
       try {
         await QRCode.toCanvas(canvas, text, {
           width: 400,
@@ -237,18 +354,91 @@ export class Sender {
     }
   }
 
+  async renderCurrentQR() {
+    this.updateUI();
+  }
+
   updateUI() {
     if (this.chunks.length === 0) return;
-    
-    const totalSteps = Math.ceil(this.chunks.length / this.gridSize);
+
+    const activeIndices = this.getActiveChunkIndices();
+    const totalSteps = Math.max(1, Math.ceil(activeIndices.length / this.gridSize));
+    if (this.currentIndex >= totalSteps) {
+      this.currentIndex = 0;
+    }
+
+    // Determine whether this step renders a Fountain Repair frame set
+    if (this.isShowingRepairStep && activeIndices.length >= 2) {
+      const payloads = [];
+      const highlighted = [];
+      const labels = [];
+
+      for (let g = 0; g < this.gridSize; g++) {
+        const combo = this.pickFountainIndices(activeIndices);
+        const repairQR = createFountainChunk(this.chunks, combo);
+        if (repairQR) {
+          payloads.push(repairQR);
+          highlighted.push(...combo);
+          labels.push(combo.map(i => `#${i + 1}`).join('⊕'));
+        }
+      }
+
+      if (payloads.length > 0) {
+        this.chunkIndexIndicator.textContent = `Fountain Repair QR (${labels.join(', ')})`;
+        this.highlightActiveSenderChunks(Array.from(new Set(highlighted)), true);
+        this.renderPayloadsToQR(payloads);
+        return;
+      }
+    }
+
     const startIdx = this.currentIndex * this.gridSize;
-    const endIdx = Math.min(startIdx + this.gridSize, this.chunks.length);
-    
-    this.chunkIndexIndicator.textContent = `Step ${this.currentIndex + 1} of ${totalSteps} (Chunks ${startIdx + 1}-${endIdx} of ${this.chunks.length})`;
+    const endIdx = Math.min(startIdx + this.gridSize, activeIndices.length);
+    const currentChunkIndices = activeIndices.slice(startIdx, endIdx);
+    const payloads = currentChunkIndices.map(idx => this.chunks[idx]);
+
+    const chunkLabels = currentChunkIndices.map(i => `#${i + 1}`).join(', ');
+    this.chunkIndexIndicator.textContent = `Step ${this.currentIndex + 1}/${totalSteps} (Chunk ${chunkLabels} of ${this.chunks.length})`;
     const percent = ((this.currentIndex + 1) / totalSteps) * 100;
     this.progressBar.style.width = `${percent}%`;
-    
-    this.renderCurrentQR();
+
+    this.highlightActiveSenderChunks(currentChunkIndices, false);
+    this.renderPayloadsToQR(payloads);
+  }
+
+  shouldUseFountainRepair(activeCount) {
+    if (activeCount < 2 || this.fountainMode === 'off') return false;
+    if (this.fountainMode === 'always') return true;
+    // 'smart': turn on Fountain Repair automatically once Pass 1 has completed
+    return this.completedPasses >= 1;
+  }
+
+  advanceStep(direction = 1) {
+    const activeIndices = this.getActiveChunkIndices();
+    const totalSteps = Math.max(1, Math.ceil(activeIndices.length / this.gridSize));
+
+    if (direction > 0 && this.shouldUseFountainRepair(activeIndices.length)) {
+      if (!this.isShowingRepairStep) {
+        // Interleave a Fountain Repair step right after this normal step
+        this.isShowingRepairStep = true;
+        this.updateUI();
+        return;
+      }
+      this.isShowingRepairStep = false;
+    } else {
+      this.isShowingRepairStep = false;
+    }
+
+    const nextIdx = this.currentIndex + direction;
+    if (nextIdx >= totalSteps) {
+      this.completedPasses++;
+      this.currentIndex = 0;
+    } else if (nextIdx < 0) {
+      this.currentIndex = totalSteps - 1;
+    } else {
+      this.currentIndex = nextIdx;
+    }
+
+    this.updateUI();
   }
 
   play() {
@@ -257,12 +447,9 @@ export class Sender {
     this.btnPlayPause.classList.remove('btn-secondary');
     this.btnPlayPause.classList.add('btn-primary');
     
-    const totalSteps = Math.ceil(this.chunks.length / this.gridSize);
-    
     if (this.playInterval) clearInterval(this.playInterval);
     this.playInterval = setInterval(() => {
-      this.currentIndex = (this.currentIndex + 1) % totalSteps;
-      this.updateUI();
+      this.advanceStep(1);
     }, 1000 / this.fps);
   }
 
@@ -288,15 +475,11 @@ export class Sender {
 
   prevChunk() {
     this.pause();
-    const totalSteps = Math.ceil(this.chunks.length / this.gridSize);
-    this.currentIndex = (this.currentIndex - 1 + totalSteps) % totalSteps;
-    this.updateUI();
+    this.advanceStep(-1);
   }
 
   nextChunk() {
     this.pause();
-    const totalSteps = Math.ceil(this.chunks.length / this.gridSize);
-    this.currentIndex = (this.currentIndex + 1) % totalSteps;
-    this.updateUI();
+    this.advanceStep(1);
   }
 }

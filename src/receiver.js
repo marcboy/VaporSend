@@ -1,5 +1,5 @@
 import jsQR from 'jsqr';
-import { parseChunk, reconstructData } from './compress';
+import { parseChunk, reconstructData, recoverFountainSlice } from './compress';
 
 export class Receiver {
   constructor() {
@@ -11,7 +11,9 @@ export class Receiver {
     this.currentSessionId = null;
     this.totalChunks = 0;
     this.filename = '';
-    this.chunksReceived = {}; // Key: Index, Value: Base64 payload
+    this.chunksReceived = {}; // Key: Index, Value: payload
+    this.repairPool = []; // Unresolved Fountain Repair packets
+    this.fountainRecoveredCount = 0;
     this.isFinished = false;
 
     // DOM Elements
@@ -49,6 +51,7 @@ export class Receiver {
     this.fileInfoText = document.getElementById('recv-file-info');
     this.percentageText = document.getElementById('recv-percentage');
     this.progressBar = document.getElementById('recv-progress-bar');
+    this.missingChunksBanner = document.getElementById('missing-chunks-banner');
     this.chunksGrid = document.getElementById('chunks-grid');
     this.chunkInfoLabel = document.getElementById('chunk-info-label');
     
@@ -519,15 +522,57 @@ export class Receiver {
     if (this.currentSessionId !== chunk.sessionId) {
       this.startNewSession(chunk);
     }
-    
-    // Write chunk if not already received
-    if (!this.chunksReceived[chunk.index]) {
+
+    if (chunk.isFountain) {
+      const key = chunk.indices.join('-');
+      const exists = this.repairPool.some(p => p.key === key);
+      if (!exists) {
+        this.repairPool.push({
+          key,
+          indices: chunk.indices,
+          lastChunkLen: chunk.lastChunkLen,
+          payload: chunk.payload
+        });
+        this.resolveRepairPool();
+      }
+    } else if (this.chunksReceived[chunk.index] === undefined) {
       this.chunksReceived[chunk.index] = chunk.payload;
-      this.updateProgressUI(chunk.index);
-      
-      // Check if we are finished
-      if (Object.keys(this.chunksReceived).length === this.totalChunks) {
-        this.completeTransfer();
+      this.updateProgressUI(chunk.index, false);
+      this.resolveRepairPool();
+    }
+
+    // Check if we are finished
+    if (!this.isFinished && Object.keys(this.chunksReceived).length === this.totalChunks) {
+      this.completeTransfer();
+    }
+  }
+
+  resolveRepairPool() {
+    let progress = true;
+    while (progress) {
+      progress = false;
+      for (let i = this.repairPool.length - 1; i >= 0; i--) {
+        const pkt = this.repairPool[i];
+        const missing = pkt.indices.filter(idx => this.chunksReceived[idx] === undefined);
+
+        if (missing.length === 0) {
+          this.repairPool.splice(i, 1);
+        } else if (missing.length === 1) {
+          const targetIdx = missing[0];
+          const knownPayloads = pkt.indices
+            .filter(idx => idx !== targetIdx)
+            .map(idx => this.chunksReceived[idx]);
+          const targetLen = (targetIdx === this.totalChunks - 1)
+            ? pkt.lastChunkLen
+            : pkt.payload.length;
+
+          const recovered = recoverFountainSlice(pkt.payload, knownPayloads, targetLen, this.encoding);
+          this.chunksReceived[targetIdx] = recovered;
+          this.fountainRecoveredCount++;
+          this.repairPool.splice(i, 1);
+          this.updateProgressUI(targetIdx, true);
+          progress = true;
+        }
       }
     }
   }
@@ -538,6 +583,8 @@ export class Receiver {
     this.filename = chunk.filename;
     this.encoding = chunk.encoding;
     this.chunksReceived = {};
+    this.repairPool = [];
+    this.fountainRecoveredCount = 0;
     this.isFinished = false;
     
     // Show progress panel
@@ -550,11 +597,12 @@ export class Receiver {
       const box = document.createElement('div');
       box.className = 'chunk-box';
       box.id = `chunk-box-${i}`;
+      box.textContent = `${i + 1}`;
       box.title = `Chunk ${i + 1}: Missing`;
       
       // Interactive hover & click helper
       const updateLabel = () => {
-        const received = !!this.chunksReceived[i];
+        const received = this.chunksReceived[i] !== undefined;
         this.chunkInfoLabel.textContent = `Chunk #${i + 1}: ${received ? 'Received ✓' : 'Missing ✗'}`;
         this.chunkInfoLabel.style.color = received ? 'var(--success)' : 'var(--error)';
       };
@@ -572,19 +620,39 @@ export class Receiver {
     this.updateProgressUI();
   }
 
-  updateProgressUI(newlyReceivedIndex = null) {
+  updateProgressUI(newlyReceivedIndex = null, viaFountain = false) {
     if (newlyReceivedIndex !== null) {
       const box = document.getElementById(`chunk-box-${newlyReceivedIndex}`);
       if (box) {
         box.classList.add('received');
-        box.title = `Chunk ${newlyReceivedIndex + 1}: Received`;
+        if (viaFountain) box.classList.add('repaired');
+        box.title = `Chunk ${newlyReceivedIndex + 1}: ${viaFountain ? 'Recovered via Fountain Repair ⚡' : 'Received'}`;
       }
     }
     
     const count = Object.keys(this.chunksReceived).length;
     const percentage = Math.round((count / this.totalChunks) * 100);
-    this.percentageText.textContent = `${percentage}% (${count}/${this.totalChunks})`;
+    const repairSuffix = this.fountainRecoveredCount > 0 ? ` • ⚡${this.fountainRecoveredCount} repaired` : '';
+    this.percentageText.textContent = `${percentage}% (${count}/${this.totalChunks}${repairSuffix})`;
     this.progressBar.style.width = `${percentage}%`;
+
+    if (this.missingChunksBanner) {
+      const missingIndices = [];
+      for (let i = 0; i < this.totalChunks; i++) {
+        if (this.chunksReceived[i] === undefined) {
+          missingIndices.push(`#${i + 1}`);
+        }
+      }
+
+      if (missingIndices.length > 0 && count > 0) {
+        this.missingChunksBanner.classList.remove('hidden');
+        const shown = missingIndices.slice(0, 15).join(', ');
+        const more = missingIndices.length > 15 ? ` (+${missingIndices.length - 15} more)` : '';
+        this.missingChunksBanner.textContent = `Still needed (${missingIndices.length}): ${shown}${more}`;
+      } else {
+        this.missingChunksBanner.classList.add('hidden');
+      }
+    }
   }
 
   completeTransfer() {
@@ -701,7 +769,12 @@ export class Receiver {
     this.decryptedText = null;
     this.currentSessionId = null;
     this.chunksReceived = {};
+    this.repairPool = [];
+    this.fountainRecoveredCount = 0;
     this.totalChunks = 0;
+    if (this.missingChunksBanner) {
+      this.missingChunksBanner.classList.add('hidden');
+    }
     
     this.resultCard.classList.add('hidden');
     document.querySelector('.scanner-card').classList.remove('hidden');

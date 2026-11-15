@@ -670,6 +670,23 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 /* CHUNKS GRID */
+.btn-xs {
+  padding: 3px 8px;
+  font-size: 0.7rem;
+  border-radius: 4px;
+}
+
+.missing-chunks-banner {
+  background-color: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+  padding: 6px 10px;
+  border-radius: var(--border-radius-sm);
+  font-size: 0.8rem;
+  font-weight: 600;
+  word-break: break-word;
+}
+
 .chunks-grid-container {
   display: flex;
   flex-direction: column;
@@ -681,6 +698,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
 }
 
 .grid-header label {
@@ -702,7 +720,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   display: grid;
   grid-template-columns: repeat(10, 1fr);
   gap: 4px;
-  max-height: 100px;
+  max-height: 115px;
   overflow-y: auto;
   background-color: var(--bg-tertiary);
   padding: 8px;
@@ -712,17 +730,25 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 .chunk-box {
   aspect-ratio: 1;
-  border-radius: 2px;
+  border-radius: 3px;
   background-color: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.03);
-  transition: all 0.2s ease;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  font-size: 0.65rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
   cursor: pointer;
+  user-select: none;
 }
 
 .chunk-box:hover {
-  transform: scale(1.15);
-  border-color: rgba(99, 102, 241, 0.5);
+  transform: scale(1.1);
+  border-color: rgba(99, 102, 241, 0.6);
   background-color: rgba(255, 255, 255, 0.12);
+  color: white;
 }
 
 .chunk-box.received:hover {
@@ -731,7 +757,33 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 .chunk-box.received {
   background-color: var(--success);
+  color: #052e16;
   box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+}
+
+.chunk-box.repaired {
+  background: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
+  color: #042f2e;
+}
+
+.sender-chunk-box.selected-filter {
+  background-color: rgba(245, 158, 11, 0.25);
+  border-color: var(--warning);
+  color: #fde68a;
+}
+
+.sender-chunk-box.active-sending {
+  background-color: var(--accent-color);
+  border-color: white;
+  color: white;
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.6);
+}
+
+.sender-chunk-box.active-fountain {
+  background: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
+  border-color: #67e8f9;
+  color: white;
+  box-shadow: 0 0 8px rgba(6, 182, 212, 0.6);
 }
 
 /* COMPLETION RESULT CARD */
