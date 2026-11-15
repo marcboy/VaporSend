@@ -379,13 +379,31 @@ textarea:focus {
   padding-bottom: 12px;
 }
 
+.stream-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 85%;
+}
+
 .stream-header h3 {
   font-size: 1.05rem;
   font-weight: 600;
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
-  max-width: 80%;
+}
+
+.compression-badge {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #34d399;
+  background-color: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 2px 8px;
+  border-radius: 9999px;
 }
 
 .qr-display-area {

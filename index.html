@@ -91,7 +91,10 @@
         <!-- SENDER ACTIVE STREAM CONTAINER -->
         <div class="card stream-card hidden" id="sender-stream-container">
           <div class="stream-header">
-            <h3 id="transfer-title">Streaming: myfile.txt</h3>
+            <div class="stream-title-group">
+              <h3 id="transfer-title">Streaming: myfile.txt</h3>
+              <span class="compression-badge" id="compression-stats-badge">Deflate Level 9</span>
+            </div>
             <button class="btn-close" id="btn-cancel-send">×</button>
           </div>
           
@@ -172,6 +175,30 @@
                   <option value="smart" selected>Smart (After Pass 1)</option>
                   <option value="always">Always Interleave</option>
                   <option value="off">Off (Normal Loop)</option>
+                </select>
+              </div>
+              <div class="setting-item">
+                <label for="ecc-select">Error Correction</label>
+                <select id="ecc-select" class="select-input" style="max-width: 100%; height: 32px; padding: 2px 8px; font-size: 0.8rem;">
+                  <option value="L">L (7% - Dense)</option>
+                  <option value="M">M (15% - Standard)</option>
+                  <option value="Q" selected>Q (25% - Blur Tolerant)</option>
+                  <option value="H">H (30% - Max Focus Help)</option>
+                </select>
+              </div>
+              <div class="setting-item">
+                <label for="color-mode-select">QR Color Mode</label>
+                <select id="color-mode-select" class="select-input" style="max-width: 100%; height: 32px; padding: 2px 8px; font-size: 0.8rem;">
+                  <option value="bw" selected>Standard B&amp;W (1x)</option>
+                  <option value="rgb">RGB Multiplex (3x Data)</option>
+                </select>
+              </div>
+              <div class="setting-item hidden" id="image-opt-item">
+                <label for="image-opt-select">Image Compression</label>
+                <select id="image-opt-select" class="select-input" style="max-width: 100%; height: 32px; padding: 2px 8px; font-size: 0.8rem;">
+                  <option value="webp800" selected>Optimize WebP (800px)</option>
+                  <option value="webp480">Ultra Compact (480px)</option>
+                  <option value="original">Original Image Bytes</option>
                 </select>
               </div>
             </div>
@@ -277,7 +304,7 @@
     </main>
 
     <footer class="app-footer">
-      <p>v1.0.17 &bull; Built on 2026-11-15 06:01 PST</p>
+      <p>v1.0.18 &bull; Built on 2026-11-15 06:33 PST</p>
     </footer>
   </div>
   

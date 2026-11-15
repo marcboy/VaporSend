@@ -531,6 +531,74 @@ export class Receiver {
     return foundCount;
   }
 
+  async scanRGBChannels() {
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    if (!w || !h) return 0;
+
+    const baseImageData = this.ctx.getImageData(0, 0, w, h);
+    const src = baseImageData.data;
+    const len = src.length;
+    const pixelCount = len >> 2;
+    let totalFound = 0;
+
+    // Extract R (0), G (1), B (2) channels with cross-talk compensation and decode each layer
+    for (let ch = 0; ch < 3; ch++) {
+      if (!this.isDecoding) break;
+
+      const chImg = this.ctx.createImageData(w, h);
+      const dst = chImg.data;
+      const other1 = (ch + 1) % 3;
+      const other2 = (ch + 2) % 3;
+
+      let sum = 0;
+      for (let i = 0; i < len; i += 16) {
+        const primary = src[i + ch];
+        const bleed = (src[i + other1] + src[i + other2]) >> 3;
+        sum += Math.max(0, primary - bleed);
+      }
+      const avg = sum / (pixelCount >> 2);
+      const threshold = Math.min(205, Math.max(70, avg * 0.88));
+
+      for (let i = 0; i < len; i += 4) {
+        const primary = src[i + ch];
+        const bleed = (src[i + other1] + src[i + other2]) >> 3;
+        const val = Math.max(0, primary - bleed);
+        const stretched = Math.min(255, Math.max(0, ((val - threshold) * 3.5) + 128));
+        dst[i] = stretched;
+        dst[i + 1] = stretched;
+        dst[i + 2] = stretched;
+        dst[i + 3] = 255;
+      }
+
+      if (this.barcodeDetector) {
+        this.ctx.putImageData(chImg, 0, 0);
+        try {
+          const barcodes = await this.barcodeDetector.detect(this.canvas);
+          if (barcodes && barcodes.length > 0) {
+            for (const bc of barcodes) {
+              if (bc.rawValue) {
+                this.handleDecodedQR(bc.rawValue);
+                totalFound++;
+              }
+            }
+            continue;
+          }
+        } catch (e) {
+          // Fallback to jsQR below
+        }
+      }
+
+      const code = jsQR(dst, w, h, { inversionAttempts: 'dontInvert' });
+      if (code && code.data) {
+        this.handleDecodedQR(code.data);
+        totalFound++;
+      }
+    }
+
+    return totalFound;
+  }
+
   async tick() {
     if (!this.isDecoding) return;
     if (this.isTickBusy) {
@@ -563,8 +631,14 @@ export class Receiver {
           detected = this.scanWithJsQR(false);
           if (detected === 0 && this.contrastBoost && this.isDecoding) {
             this.drawZoomedFrameToCanvas();
-            this.scanWithJsQR(true);
+            detected = this.scanWithJsQR(true);
           }
+        }
+
+        // 3. If no standard B&W QR was decoded, de-multiplex R, G, and B channels for RGB 3x Multiplexed QRs
+        if (detected === 0 && this.isDecoding) {
+          this.drawZoomedFrameToCanvas();
+          await this.scanRGBChannels();
         }
       }
     } finally {
@@ -650,6 +724,7 @@ export class Receiver {
     this.totalChunks = chunk.total;
     this.filename = chunk.filename;
     this.encoding = chunk.encoding;
+    this.compressionMode = chunk.compressionMode || 'gzip';
     this.chunksReceived = {};
     this.repairPool = [];
     this.fountainRecoveredCount = 0;
@@ -737,7 +812,7 @@ export class Receiver {
       for (let i = 0; i < this.totalChunks; i++) {
         orderedChunks.push(this.chunksReceived[i]);
       }
-      const decompressedData = reconstructData(orderedChunks, this.encoding);
+      const decompressedData = reconstructData(orderedChunks, this.encoding, this.compressionMode);
       
       this.resultDetails.innerHTML = '';
       

@@ -16,6 +16,11 @@ export class Sender {
     this.gridSize = 1; // Number of QRs to show simultaneously
     this.antiGlare = true; // Dim white background slightly to prevent webcam exposure blowout
     this.fountainMode = 'smart'; // 'smart' (after pass 1), 'always', or 'off'
+    this.eccLevel = 'Q'; // Error correction level: 'L', 'M', 'Q', 'H'
+    this.colorMode = 'bw'; // 'bw' (1x) or 'rgb' (3x R/G/B channel multiplexed)
+    this.imageOptMode = 'webp800'; // 'webp800', 'webp480', or 'original'
+    this.originalFile = null;
+    this.originalFileBytes = 0;
     this.selectedChunks = new Set(); // Optional manual subset of chunk indices to loop
     this.completedPasses = 0;
     this.repairCounter = 0;
@@ -34,6 +39,7 @@ export class Sender {
     this.streamContainer = document.getElementById('sender-stream-container');
     this.qrContainer = document.getElementById('sender-qr-container');
     this.transferTitle = document.getElementById('transfer-title');
+    this.compressionStatsBadge = document.getElementById('compression-stats-badge');
     this.chunkIndexIndicator = document.getElementById('chunk-index-indicator');
     this.fpsIndicator = document.getElementById('fps-indicator');
     this.progressBar = document.getElementById('send-progress-bar');
@@ -50,6 +56,10 @@ export class Sender {
     this.gridSelect = document.getElementById('grid-select');
     this.antiGlareSelect = document.getElementById('antiglare-select');
     this.fountainSelect = document.getElementById('fountain-select');
+    this.eccSelect = document.getElementById('ecc-select');
+    this.colorModeSelect = document.getElementById('color-mode-select');
+    this.imageOptItem = document.getElementById('image-opt-item');
+    this.imageOptSelect = document.getElementById('image-opt-select');
 
     this.initEventListeners();
   }
@@ -99,6 +109,9 @@ export class Sender {
         alert('Please paste a file or type some text first!');
         return;
       }
+      this.originalFile = null;
+      this.originalFileBytes = new TextEncoder().encode(text).byteLength;
+      if (this.imageOptItem) this.imageOptItem.classList.add('hidden');
       this.filename = '_clip_';
       this.rawContent = text;
       this.startStreaming();
@@ -165,6 +178,29 @@ export class Sender {
       this.fountainMode = e.target.value;
       this.isShowingRepairStep = false;
       this.updateUI();
+    });
+
+    this.eccSelect?.addEventListener('change', (e) => {
+      this.eccLevel = e.target.value;
+      this.updateUI();
+    });
+
+    this.colorModeSelect?.addEventListener('change', (e) => {
+      this.colorMode = e.target.value;
+      this.currentIndex = 0;
+      this.isShowingRepairStep = false;
+      this.updateUI();
+    });
+
+    this.imageOptSelect?.addEventListener('change', async (e) => {
+      this.imageOptMode = e.target.value;
+      if (this.originalFile) {
+        const wasPlaying = this.isPlaying;
+        this.pause();
+        await this.processSelectedFile(this.originalFile);
+        this.generateChunks();
+        if (wasPlaying) this.play();
+      }
     });
 
     this.btnResetSenderFilter?.addEventListener('click', () => {
@@ -271,14 +307,86 @@ export class Sender {
     return unique.sort((a, b) => a - b);
   }
 
-  handleFileSelected(file) {
+  async handleFileSelected(file) {
+    this.originalFile = file;
+    this.originalFileBytes = file.size;
+    const isOptimizableImage = file.type && file.type.startsWith('image/') && !file.type.includes('svg') && !file.type.includes('gif');
+    if (this.imageOptItem) {
+      this.imageOptItem.classList.toggle('hidden', !isOptimizableImage);
+    }
+
+    await this.processSelectedFile(file);
+    this.startStreaming();
+  }
+
+  async processSelectedFile(file) {
+    const isOptimizableImage = file.type && file.type.startsWith('image/') && !file.type.includes('svg') && !file.type.includes('gif');
+    if (isOptimizableImage && this.imageOptMode !== 'original' && file.size > 8192) {
+      try {
+        const maxDim = this.imageOptMode === 'webp480' ? 480 : 800;
+        const quality = this.imageOptMode === 'webp480' ? 0.68 : 0.78;
+        const optimized = await this.compressImageToBuffer(file, maxDim, quality);
+        if (optimized && optimized.buffer.byteLength < file.size) {
+          this.rawContent = optimized.buffer;
+          const baseName = file.name.replace(/\.[^.]+$/, '');
+          this.filename = `${baseName}.${optimized.ext}`;
+          return;
+        }
+      } catch (e) {
+        console.warn('Image optimization skipped, using original file:', e);
+      }
+    }
+
     this.filename = file.name;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      this.rawContent = e.target.result; // ArrayBuffer
-      this.startStreaming();
-    };
-    reader.readAsArrayBuffer(file);
+    this.rawContent = await file.arrayBuffer();
+  }
+
+  compressImageToBuffer(file, maxDim = 800, quality = 0.78) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width >= height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(async (blob) => {
+          if (!blob) return reject(new Error('Canvas toBlob failed'));
+          const ext = blob.type.includes('webp') ? 'webp' : 'jpg';
+          const buffer = await blob.arrayBuffer();
+          resolve({ buffer, ext });
+        }, 'image/webp', quality);
+      };
+      img.onerror = (err) => {
+        URL.revokeObjectURL(url);
+        reject(err);
+      };
+      img.src = url;
+    });
+  }
+
+  formatBytes(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  getChunksPerStep() {
+    const colorMultiplier = this.colorMode === 'rgb' ? 3 : 1;
+    return this.gridSize * colorMultiplier;
   }
 
   startStreaming() {
@@ -298,7 +406,7 @@ export class Sender {
     this.currentIndex = 0;
     this.updateUI();
     
-    const totalSteps = Math.ceil(this.chunks.length / this.gridSize);
+    const totalSteps = Math.ceil(this.chunks.length / this.getChunksPerStep());
     if (totalSteps === 1) {
       this.play(); // Auto-start immediately since there is only one frame set
     } else {
@@ -313,6 +421,7 @@ export class Sender {
     document.querySelector('.divider').classList.remove('hidden');
     document.querySelector('.text-input-card').classList.remove('hidden');
     this.rawContent = null;
+    this.originalFile = null;
     this.chunks = [];
   }
 
@@ -324,14 +433,107 @@ export class Sender {
     this.repairCounter = 0;
     this.isShowingRepairStep = false;
     this.currentIndex = 0;
+    this.updateCompressionBadge();
     this.buildSenderGrid();
     this.updateUI();
+  }
+
+  updateCompressionBadge() {
+    if (!this.compressionStatsBadge || !this.chunks.stats) return;
+    const stats = this.chunks.stats;
+    const origBytes = this.originalFileBytes || stats.originalBytes;
+    const finalBytes = stats.compressedBytes;
+    if (origBytes > finalBytes) {
+      const savedPct = Math.round(((origBytes - finalBytes) / origBytes) * 100);
+      this.compressionStatsBadge.textContent = `Compressed: ${this.formatBytes(origBytes)} → ${this.formatBytes(finalBytes)} (-${savedPct}%)`;
+    } else {
+      this.compressionStatsBadge.textContent = `Size: ${this.formatBytes(finalBytes)} (Already optimal)`;
+    }
+  }
+
+  renderRGBMultiplexedQR(canvas, tripletTexts, lightHex) {
+    // Ensure exactly 3 texts (pad by repeating if fewer than 3 chunks remain)
+    const texts = [
+      tripletTexts[0],
+      tripletTexts[1] || tripletTexts[0],
+      tripletTexts[2] || tripletTexts[0]
+    ];
+
+    // First create QR matrices to find the maximum version among the 3 so all 3 share the exact module grid
+    const initialQRs = texts.map(t => QRCode.create(t, { errorCorrectionLevel: this.eccLevel }));
+    const maxVersion = Math.max(...initialQRs.map(q => q.version));
+    const qrs = initialQRs.map((q, idx) =>
+      q.version === maxVersion
+        ? q
+        : QRCode.create(texts[idx], { version: maxVersion, errorCorrectionLevel: this.eccLevel })
+    );
+
+    const moduleCount = qrs[0].modules.size;
+    const margin = 3;
+    const totalCells = moduleCount + margin * 2;
+    const canvasSize = 400;
+    canvas.width = canvasSize;
+    canvas.height = canvasSize;
+
+    const ctx = canvas.getContext('2d');
+    const lightVal = lightHex === '#d1d5db' ? 212 : 255;
+    const imgData = ctx.createImageData(canvasSize, canvasSize);
+    const data = imgData.data;
+
+    const rData = qrs[0].modules.data;
+    const gData = qrs[1].modules.data;
+    const bData = qrs[2].modules.data;
+
+    for (let y = 0; y < canvasSize; y++) {
+      const cellRow = Math.floor((y * totalCells) / canvasSize) - margin;
+      const inRowBounds = cellRow >= 0 && cellRow < moduleCount;
+      const rowOffset = cellRow * moduleCount;
+
+      for (let x = 0; x < canvasSize; x++) {
+        const cellCol = Math.floor((x * totalCells) / canvasSize) - margin;
+        const inBounds = inRowBounds && cellCol >= 0 && cellCol < moduleCount;
+
+        let r = lightVal;
+        let g = lightVal;
+        let b = lightVal;
+
+        if (inBounds) {
+          const mIdx = rowOffset + cellCol;
+          if (rData[mIdx]) r = 0;
+          if (gData[mIdx]) g = 0;
+          if (bData[mIdx]) b = 0;
+        }
+
+        const pIdx = (y * canvasSize + x) << 2;
+        data[pIdx] = r;
+        data[pIdx + 1] = g;
+        data[pIdx + 2] = b;
+        data[pIdx + 3] = 255;
+      }
+    }
+
+    ctx.putImageData(imgData, 0, 0);
   }
 
   async renderPayloadsToQR(payloads) {
     this.qrContainer.innerHTML = '';
     this.qrContainer.className = `qr-display-area cols-${this.gridSize}${this.antiGlare ? ' antiglare' : ''}`;
     const lightColor = this.antiGlare ? '#d1d5db' : '#ffffff';
+
+    if (this.colorMode === 'rgb') {
+      for (let i = 0; i < payloads.length; i += 3) {
+        const triplet = payloads.slice(i, i + 3);
+        const canvas = document.createElement('canvas');
+        canvas.className = 'qr-canvas-item';
+        this.qrContainer.appendChild(canvas);
+        try {
+          this.renderRGBMultiplexedQR(canvas, triplet, lightColor);
+        } catch (err) {
+          console.error('Failed to generate RGB QR Code:', err);
+        }
+      }
+      return;
+    }
 
     for (const text of payloads) {
       const canvas = document.createElement('canvas');
@@ -346,7 +548,7 @@ export class Sender {
             dark: '#000000',
             light: lightColor
           },
-          errorCorrectionLevel: 'M'
+          errorCorrectionLevel: this.eccLevel
         });
       } catch (err) {
         console.error('Failed to generate QR Code:', err);
@@ -362,7 +564,8 @@ export class Sender {
     if (this.chunks.length === 0) return;
 
     const activeIndices = this.getActiveChunkIndices();
-    const totalSteps = Math.max(1, Math.ceil(activeIndices.length / this.gridSize));
+    const chunksPerStep = this.getChunksPerStep();
+    const totalSteps = Math.max(1, Math.ceil(activeIndices.length / chunksPerStep));
     if (this.currentIndex >= totalSteps) {
       this.currentIndex = 0;
     }
@@ -373,7 +576,7 @@ export class Sender {
       const highlighted = [];
       const labels = [];
 
-      for (let g = 0; g < this.gridSize; g++) {
+      for (let g = 0; g < chunksPerStep; g++) {
         const combo = this.pickFountainIndices(activeIndices);
         const repairQR = createFountainChunk(this.chunks, combo);
         if (repairQR) {
@@ -384,20 +587,22 @@ export class Sender {
       }
 
       if (payloads.length > 0) {
-        this.chunkIndexIndicator.textContent = `Fountain Repair QR (${labels.join(', ')})`;
+        const modeTag = this.colorMode === 'rgb' ? 'RGB 3x ' : '';
+        this.chunkIndexIndicator.textContent = `${modeTag}Fountain Repair QR (${labels.join(', ')})`;
         this.highlightActiveSenderChunks(Array.from(new Set(highlighted)), true);
         this.renderPayloadsToQR(payloads);
         return;
       }
     }
 
-    const startIdx = this.currentIndex * this.gridSize;
-    const endIdx = Math.min(startIdx + this.gridSize, activeIndices.length);
+    const startIdx = this.currentIndex * chunksPerStep;
+    const endIdx = Math.min(startIdx + chunksPerStep, activeIndices.length);
     const currentChunkIndices = activeIndices.slice(startIdx, endIdx);
     const payloads = currentChunkIndices.map(idx => this.chunks[idx]);
 
     const chunkLabels = currentChunkIndices.map(i => `#${i + 1}`).join(', ');
-    this.chunkIndexIndicator.textContent = `Step ${this.currentIndex + 1}/${totalSteps} (Chunk ${chunkLabels} of ${this.chunks.length})`;
+    const modePrefix = this.colorMode === 'rgb' ? 'RGB 3x • ' : '';
+    this.chunkIndexIndicator.textContent = `${modePrefix}Step ${this.currentIndex + 1}/${totalSteps} (Chunk ${chunkLabels} of ${this.chunks.length})`;
     const percent = ((this.currentIndex + 1) / totalSteps) * 100;
     this.progressBar.style.width = `${percent}%`;
 
@@ -414,7 +619,8 @@ export class Sender {
 
   advanceStep(direction = 1) {
     const activeIndices = this.getActiveChunkIndices();
-    const totalSteps = Math.max(1, Math.ceil(activeIndices.length / this.gridSize));
+    const chunksPerStep = this.getChunksPerStep();
+    const totalSteps = Math.max(1, Math.ceil(activeIndices.length / chunksPerStep));
 
     if (direction > 0 && this.shouldUseFountainRepair(activeIndices.length)) {
       if (!this.isShowingRepairStep) {

@@ -118,18 +118,23 @@ export function prepareChunks(data, filename, maxChunkSize = 400, encoding = 'ba
     binaryData = data;
   }
 
-  // Compress using GZIP
-  const compressed = pako.gzip(binaryData);
+  // Compress using max-level raw Deflate (level 9, zero 18-byte GZIP header overhead)
+  // and fall back to raw uncompressed bytes if the payload is already compressed or tiny.
+  const deflated = pako.deflateRaw(binaryData, { level: 9, memLevel: 9 });
+  const useDeflate = deflated.byteLength < binaryData.byteLength;
+  const finalBytes = useDeflate ? deflated : binaryData;
+  const compSuffix = useDeflate ? 'D' : 'R';
+
   const encodedContent = encoding === 'base45' 
-    ? uint8ArrayToBase45(compressed) 
-    : uint8ArrayToBase64(compressed);
+    ? uint8ArrayToBase45(finalBytes) 
+    : uint8ArrayToBase64(finalBytes);
   
   const totalLength = encodedContent.length;
-  const numChunks = Math.ceil(totalLength / maxChunkSize);
+  const numChunks = Math.max(1, Math.ceil(totalLength / maxChunkSize));
   
   const sessionId = Math.floor(Math.random() * 0xffff).toString(16).toUpperCase().padStart(4, '0');
   const encodedFilename = uint8ArrayToBase45(new TextEncoder().encode(filename));
-  const encCode = encoding === 'base45' ? '45' : '64';
+  const encCode = `${encoding === 'base45' ? '45' : '64'}${compSuffix}`;
   
   const chunks = [];
   for (let i = 0; i < numChunks; i++) {
@@ -141,6 +146,18 @@ export function prepareChunks(data, filename, maxChunkSize = 400, encoding = 'ba
     const chunkText = `V1:${sessionId}:${numChunks}:${i}:${encCode}:${encodedFilename.length}:${encodedFilename}${slice}`;
     chunks.push(chunkText);
   }
+
+  const savedBytes = Math.max(0, binaryData.byteLength - finalBytes.byteLength);
+  const savedPercent = binaryData.byteLength > 0
+    ? Math.round((savedBytes / binaryData.byteLength) * 100)
+    : 0;
+
+  chunks.stats = {
+    originalBytes: binaryData.byteLength,
+    compressedBytes: finalBytes.byteLength,
+    savedPercent,
+    isCompressed: useDeflate
+  };
   
   return chunks;
 }
@@ -181,7 +198,7 @@ export function createFountainChunk(chunks, indices) {
   }
 
   const encodedFilename = uint8ArrayToBase45(new TextEncoder().encode(first.filename));
-  const encCode = encoding === 'base45' ? '45' : '64';
+  const encCode = first.encCode || (encoding === 'base45' ? '45D' : '64D');
   const indexSpec = indices.join('-');
 
   return `VX:${first.sessionId}:${first.total}:${indexSpec}:${lastChunkLen}:${encCode}:${encodedFilename.length}:${encodedFilename}${parityPayload}`;
@@ -241,6 +258,13 @@ export function parseChunk(qrText) {
       const payload = rest.slice(fnLen);
       const filename = new TextDecoder().decode(base45ToUint8Array(encodedFilename));
 
+      const isBase45 = encodingCode.startsWith('45');
+      const compressionMode = encodingCode.endsWith('D')
+        ? 'deflateRaw'
+        : encodingCode.endsWith('R')
+          ? 'raw'
+          : 'gzip';
+
       return {
         isFountain: true,
         sessionId,
@@ -248,7 +272,9 @@ export function parseChunk(qrText) {
         indices,
         lastChunkLen,
         filename,
-        encoding: encodingCode === '45' ? 'base45' : 'base64',
+        encCode: encodingCode,
+        encoding: isBase45 ? 'base45' : 'base64',
+        compressionMode,
         payload
       };
     } catch (e) {
@@ -276,6 +302,12 @@ export function parseChunk(qrText) {
       const encodedFilename = rest.slice(0, fnLen);
       const payload = rest.slice(fnLen);
       const filename = new TextDecoder().decode(base45ToUint8Array(encodedFilename));
+      const isBase45 = encodingCode.startsWith('45');
+      const compressionMode = encodingCode.endsWith('D')
+        ? 'deflateRaw'
+        : encodingCode.endsWith('R')
+          ? 'raw'
+          : 'gzip';
 
       return {
         isFountain: false,
@@ -283,7 +315,9 @@ export function parseChunk(qrText) {
         total,
         index,
         filename,
-        encoding: encodingCode === '45' ? 'base45' : 'base64',
+        encCode: encodingCode,
+        encoding: isBase45 ? 'base45' : 'base64',
+        compressionMode,
         payload
       };
     } catch (e) {
@@ -307,11 +341,14 @@ export function parseChunk(qrText) {
   }
   
   return {
+    isFountain: false,
     sessionId,
     total,
     index,
     filename,
+    encCode: encodingCode,
     encoding: encodingCode === '45' ? 'base45' : 'base64',
+    compressionMode: 'gzip',
     payload
   };
 }
@@ -319,10 +356,17 @@ export function parseChunk(qrText) {
 /**
  * Reconstructs the compressed data and decompresses it back.
  */
-export function reconstructData(orderedPayloads, encoding) {
+export function reconstructData(orderedPayloads, encoding, compressionMode = 'gzip') {
   const fullPayload = orderedPayloads.join('');
-  const compressedData = encoding === 'base45'
+  const binaryBytes = encoding === 'base45'
     ? base45ToUint8Array(fullPayload)
     : base64ToUint8Array(fullPayload);
-  return pako.ungzip(compressedData);
+
+  if (compressionMode === 'raw') {
+    return binaryBytes;
+  }
+  if (compressionMode === 'deflateRaw') {
+    return pako.inflateRaw(binaryBytes);
+  }
+  return pako.ungzip(binaryBytes);
 }
