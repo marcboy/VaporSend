@@ -540,10 +540,25 @@ input[type="range"]::-webkit-slider-thumb:hover {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
   background-color: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-sm);
   padding: 8px 12px;
+}
+
+.tuning-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 180px;
+}
+
+.tuning-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .zoom-control {

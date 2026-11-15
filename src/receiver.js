@@ -23,10 +23,15 @@ export class Receiver {
     this.btnToggleCamera = document.getElementById('btn-toggle-camera');
     this.zoomSlider = document.getElementById('camera-zoom-slider');
     this.zoomValueLabel = document.getElementById('zoom-value-label');
+    this.focusControlContainer = document.getElementById('focus-control-container');
+    this.focusSlider = document.getElementById('camera-focus-slider');
+    this.focusValueLabel = document.getElementById('focus-value-label');
+    this.btnToggleFocusLock = document.getElementById('btn-toggle-focus-lock');
     this.btnToggleContrast = document.getElementById('btn-toggle-contrast');
     
     this.isMirrored = false;
     this.zoomLevel = 1.0;
+    this.focusLocked = false;
     this.contrastBoost = true;
     this.isTickBusy = false;
 
@@ -81,9 +86,24 @@ export class Receiver {
       this.applyHardwareZoom();
     });
 
+    this.focusSlider?.addEventListener('input', (e) => {
+      const dist = parseFloat(e.target.value);
+      this.applyManualFocusDistance(dist);
+    });
+
+    this.btnToggleFocusLock?.addEventListener('click', () => {
+      this.setFocusLock(!this.focusLocked);
+    });
+
+    this.video?.addEventListener('click', () => {
+      if (this.stream) {
+        this.setFocusLock(!this.focusLocked);
+      }
+    });
+
     this.btnToggleContrast?.addEventListener('click', () => {
       this.contrastBoost = !this.contrastBoost;
-      this.btnToggleContrast.textContent = `Anti-Glare Boost: ${this.contrastBoost ? 'ON' : 'OFF'}`;
+      this.btnToggleContrast.textContent = `Anti-Glare: ${this.contrastBoost ? 'ON' : 'OFF'}`;
       if (this.contrastBoost) {
         this.btnToggleContrast.classList.add('btn-primary');
       } else {
@@ -152,6 +172,122 @@ export class Receiver {
     }
   }
 
+  setupFocusControls() {
+    this.focusLocked = false;
+    this.updateFocusLockUI();
+
+    if (!this.stream) return;
+    const track = this.stream.getVideoTracks()[0];
+    if (!track || !track.getCapabilities) return;
+
+    try {
+      const caps = track.getCapabilities();
+      const settings = track.getSettings ? track.getSettings() : {};
+
+      if (caps.focusDistance && this.focusControlContainer && this.focusSlider) {
+        this.focusControlContainer.classList.remove('hidden');
+        this.focusSlider.min = caps.focusDistance.min;
+        this.focusSlider.max = caps.focusDistance.max;
+        this.focusSlider.step = caps.focusDistance.step || ((caps.focusDistance.max - caps.focusDistance.min) / 100);
+        if (settings.focusDistance !== undefined) {
+          this.focusSlider.value = settings.focusDistance;
+        }
+        if (this.focusValueLabel) {
+          this.focusValueLabel.textContent = 'Auto';
+        }
+      } else if (this.focusControlContainer) {
+        this.focusControlContainer.classList.add('hidden');
+      }
+    } catch (e) {
+      // Ignore capability inspection errors
+    }
+  }
+
+  applyManualFocusDistance(distance) {
+    if (!this.stream || isNaN(distance)) return;
+    const track = this.stream.getVideoTracks()[0];
+    if (!track || !track.getCapabilities) return;
+
+    try {
+      const caps = track.getCapabilities();
+      if (caps.focusMode && caps.focusMode.includes('manual')) {
+        const clamped = caps.focusDistance
+          ? Math.min(caps.focusDistance.max, Math.max(caps.focusDistance.min, distance))
+          : distance;
+        track.applyConstraints({
+          advanced: [{ focusMode: 'manual', focusDistance: clamped }]
+        }).catch(() => {});
+        this.focusLocked = true;
+        if (this.focusValueLabel) {
+          this.focusValueLabel.textContent = `${Math.round(clamped)}`;
+        }
+        this.updateFocusLockUI();
+      }
+    } catch (e) {
+      // Ignore manual focus errors
+    }
+  }
+
+  setFocusLock(locked) {
+    this.focusLocked = locked;
+    this.updateFocusLockUI();
+
+    if (!this.stream) return;
+    const track = this.stream.getVideoTracks()[0];
+    if (!track || !track.getCapabilities) return;
+
+    try {
+      const caps = track.getCapabilities();
+      const settings = track.getSettings ? track.getSettings() : {};
+
+      if (locked) {
+        const adv = {};
+        if (caps.focusMode && caps.focusMode.includes('manual')) {
+          adv.focusMode = 'manual';
+          if (caps.focusDistance && settings.focusDistance !== undefined) {
+            adv.focusDistance = settings.focusDistance;
+            if (this.focusSlider) this.focusSlider.value = settings.focusDistance;
+            if (this.focusValueLabel) this.focusValueLabel.textContent = 'Locked';
+          }
+        } else if (caps.focusMode && caps.focusMode.includes('single-shot')) {
+          adv.focusMode = 'single-shot';
+        }
+        if (caps.exposureMode && caps.exposureMode.includes('manual')) {
+          adv.exposureMode = 'manual';
+        }
+        if (Object.keys(adv).length > 0) {
+          track.applyConstraints({ advanced: [adv] }).catch(() => {});
+        }
+      } else {
+        const adv = {};
+        if (caps.focusMode && caps.focusMode.includes('continuous')) {
+          adv.focusMode = 'continuous';
+        }
+        if (caps.exposureMode && caps.exposureMode.includes('continuous')) {
+          adv.exposureMode = 'continuous';
+        }
+        if (this.focusValueLabel) {
+          this.focusValueLabel.textContent = 'Auto';
+        }
+        if (Object.keys(adv).length > 0) {
+          track.applyConstraints({ advanced: [adv] }).catch(() => {});
+        }
+      }
+    } catch (e) {
+      // Ignore focus lock errors on fixed-focus lenses
+    }
+  }
+
+  updateFocusLockUI() {
+    if (!this.btnToggleFocusLock) return;
+    if (this.focusLocked) {
+      this.btnToggleFocusLock.textContent = 'Focus: Locked';
+      this.btnToggleFocusLock.classList.add('btn-primary');
+    } else {
+      this.btnToggleFocusLock.textContent = 'Lock Focus';
+      this.btnToggleFocusLock.classList.remove('btn-primary');
+    }
+  }
   toggleMirror() {
     this.isMirrored = !this.isMirrored;
     if (this.isMirrored) {
@@ -202,26 +338,7 @@ export class Receiver {
     
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
-
-      // Enable continuous autofocus if the camera supports it
-      const track = this.stream.getVideoTracks()[0];
-      if (track && track.getCapabilities) {
-        try {
-          const caps = track.getCapabilities();
-          const advanced = {};
-          if (caps.focusMode && caps.focusMode.includes('continuous')) {
-            advanced.focusMode = 'continuous';
-          }
-          if (caps.exposureMode && caps.exposureMode.includes('continuous')) {
-            advanced.exposureMode = 'continuous';
-          }
-          if (Object.keys(advanced).length > 0) {
-            track.applyConstraints({ advanced: [advanced] }).catch(() => {});
-          }
-        } catch (e) {
-          // Ignore capability query errors
-        }
-      }
+      this.setupFocusControls();
       this.applyHardwareZoom();
 
       this.video.srcObject = this.stream;
@@ -392,6 +509,11 @@ export class Receiver {
   handleDecodedQR(data) {
     const chunk = parseChunk(data);
     if (!chunk) return; // Not a valid chunk for our app
+
+    // Auto-lock camera focus as soon as the first QR frame decodes so the lens stops hunting during animation
+    if (!this.focusLocked) {
+      this.setFocusLock(true);
+    }
     
     // Check if this is a new transfer session
     if (this.currentSessionId !== chunk.sessionId) {
