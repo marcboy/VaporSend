@@ -178,9 +178,6 @@ export class Receiver {
   }
 
   setupFocusControls() {
-    this.focusLocked = false;
-    this.updateFocusLockUI();
-
     if (!this.stream) return;
     const track = this.stream.getVideoTracks()[0];
     if (!track || !track.getCapabilities) return;
@@ -189,60 +186,87 @@ export class Receiver {
       const caps = track.getCapabilities();
       const settings = track.getSettings ? track.getSettings() : {};
 
-      // Restore continuous autofocus & auto-exposure by default so the camera focuses itself automatically
-      const advanced = {};
-      if (caps.focusMode && caps.focusMode.includes('continuous')) {
-        advanced.focusMode = 'continuous';
-      }
-      if (caps.exposureMode && caps.exposureMode.includes('continuous')) {
-        advanced.exposureMode = 'continuous';
-      }
-      if (Object.keys(advanced).length > 0) {
-        track.applyConstraints({ advanced: [advanced] }).catch(() => {});
+      if (!this.focusLocked) {
+        const advanced = {};
+        if (caps.focusMode && caps.focusMode.includes('continuous')) {
+          advanced.focusMode = 'continuous';
+        }
+        if (caps.exposureMode && caps.exposureMode.includes('continuous')) {
+          advanced.exposureMode = 'continuous';
+        }
+        if (Object.keys(advanced).length > 0) {
+          track.applyConstraints({ advanced: [advanced] }).catch(() => {});
+        }
       }
 
-      if (caps.focusDistance && this.focusControlContainer && this.focusSlider) {
-        this.focusControlContainer.classList.remove('hidden');
+      if (caps.focusDistance && this.focusSlider) {
         this.focusSlider.min = caps.focusDistance.min;
         this.focusSlider.max = caps.focusDistance.max;
         this.focusSlider.step = caps.focusDistance.step || ((caps.focusDistance.max - caps.focusDistance.min) / 100);
-        if (settings.focusDistance !== undefined) {
+        if (settings.focusDistance !== undefined && !this.focusLocked) {
           this.focusSlider.value = settings.focusDistance;
         }
-        if (this.focusValueLabel) {
-          this.focusValueLabel.textContent = 'Auto';
-        }
-      } else if (this.focusControlContainer) {
-        this.focusControlContainer.classList.add('hidden');
       }
     } catch (e) {
       // Ignore capability inspection errors
     }
+
+    this.updateFocusLockUI();
   }
 
-  applyManualFocusDistance(distance) {
-    if (!this.stream || isNaN(distance)) return;
+  applyManualFocusDistance(sliderValue) {
+    if (this.focusWatchdogTimer) {
+      clearTimeout(this.focusWatchdogTimer);
+      this.focusWatchdogTimer = null;
+    }
+    this.focusLocked = true;
+    this.autoFocusLocked = false;
+
+    if (!this.stream || isNaN(sliderValue)) {
+      if (this.focusValueLabel) {
+        this.focusValueLabel.textContent = `Manual (${Math.round(sliderValue)})`;
+      }
+      this.updateFocusLockUI();
+      return;
+    }
+
     const track = this.stream.getVideoTracks()[0];
-    if (!track || !track.getCapabilities) return;
+    if (!track) return;
 
     try {
-      const caps = track.getCapabilities();
-      if (caps.focusMode && caps.focusMode.includes('manual')) {
-        const clamped = caps.focusDistance
-          ? Math.min(caps.focusDistance.max, Math.max(caps.focusDistance.min, distance))
-          : distance;
-        track.applyConstraints({
-          advanced: [{ focusMode: 'manual', focusDistance: clamped }]
-        }).catch(() => {});
-        this.focusLocked = true;
-        if (this.focusValueLabel) {
-          this.focusValueLabel.textContent = `${Math.round(clamped)}`;
+      const caps = track.getCapabilities ? track.getCapabilities() : {};
+      let targetDist = sliderValue;
+
+      if (caps.focusDistance) {
+        // Ensure slider range matches hardware range if capabilities loaded late
+        if (parseFloat(this.focusSlider.max) === 100 && caps.focusDistance.max !== 100) {
+          const ratio = sliderValue / 100;
+          this.focusSlider.min = caps.focusDistance.min;
+          this.focusSlider.max = caps.focusDistance.max;
+          this.focusSlider.step = caps.focusDistance.step || ((caps.focusDistance.max - caps.focusDistance.min) / 100);
+          targetDist = caps.focusDistance.min + ratio * (caps.focusDistance.max - caps.focusDistance.min);
+          this.focusSlider.value = targetDist;
         }
-        this.updateFocusLockUI();
+        targetDist = Math.min(caps.focusDistance.max, Math.max(caps.focusDistance.min, targetDist));
+        const pct = Math.round(((targetDist - caps.focusDistance.min) / (caps.focusDistance.max - caps.focusDistance.min || 1)) * 100);
+        if (this.focusValueLabel) {
+          this.focusValueLabel.textContent = `Manual ${pct}%`;
+        }
+      } else if (this.focusValueLabel) {
+        this.focusValueLabel.textContent = `Manual ${Math.round(sliderValue)}%`;
       }
+
+      // Apply manual focus constraint (try with focusDistance first, fallback to focusMode: 'manual')
+      track.applyConstraints({
+        advanced: [{ focusMode: 'manual', focusDistance: targetDist }]
+      }).catch(() => {
+        track.applyConstraints({ advanced: [{ focusMode: 'manual' }] }).catch(() => {});
+      });
     } catch (e) {
       // Ignore manual focus errors
     }
+
+    this.updateFocusLockUI();
   }
 
   setFocusLock(locked, isAuto = false) {
@@ -317,10 +341,10 @@ export class Receiver {
   updateFocusLockUI() {
     if (!this.btnToggleFocusLock) return;
     if (this.focusLocked) {
-      this.btnToggleFocusLock.textContent = 'Focus: Locked';
+      this.btnToggleFocusLock.textContent = this.autoFocusLocked ? 'Focus: Auto-Locked' : 'Focus: Manual';
       this.btnToggleFocusLock.classList.add('btn-primary');
     } else {
-      this.btnToggleFocusLock.textContent = 'Lock Focus';
+      this.btnToggleFocusLock.textContent = 'Auto Focus';
       this.btnToggleFocusLock.classList.remove('btn-primary');
     }
   }
@@ -389,6 +413,8 @@ export class Receiver {
       this.video.onloadedmetadata = () => {
         this.canvas.width = this.video.videoWidth || 1280;
         this.canvas.height = this.video.videoHeight || 720;
+        // Re-query capabilities once video stream is actively flowing
+        setTimeout(() => this.setupFocusControls(), 250);
         this.tick();
       };
     } catch (err) {

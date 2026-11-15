@@ -208,14 +208,14 @@
                 <label for="camera-zoom-slider">Zoom: <span id="zoom-value-label">1.0x</span></label>
                 <input type="range" id="camera-zoom-slider" min="1" max="3" step="0.25" value="1">
               </div>
-              <div class="zoom-control hidden" id="focus-control-container">
+              <div class="zoom-control" id="focus-control-container">
                 <label for="camera-focus-slider">Focus: <span id="focus-value-label">Auto</span></label>
-                <input type="range" id="camera-focus-slider" min="0" max="100" step="1" value="50">
+                <input type="range" id="camera-focus-slider" min="0" max="100" step="1" value="35">
               </div>
             </div>
             <div class="tuning-buttons">
-              <button class="btn btn-secondary btn-sm" id="btn-toggle-focus-lock" title="Lock camera focus so it stops hunting while scanning">
-                Lock Focus
+              <button class="btn btn-secondary btn-sm" id="btn-toggle-focus-lock" title="Switch between Auto Focus and Manual Locked Focus">
+                Auto Focus
               </button>
               <button class="btn btn-secondary btn-sm btn-primary" id="btn-toggle-contrast" title="Boost contrast to cut through phone screen glare">
                 Anti-Glare: ON
@@ -277,7 +277,7 @@
     </main>
 
     <footer class="app-footer">
-      <p>v1.0.16 &bull; Built on 2026-11-15 05:59 PST</p>
+      <p>v1.0.17 &bull; Built on 2026-11-15 06:01 PST</p>
     </footer>
   </div>
   
