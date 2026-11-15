@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script type="module" crossorigin src="/VaporSend/assets/index-CCYh9eMM.js"></script>
-  <link rel="stylesheet" crossorigin href="/VaporSend/assets/index-DRjtPnnZ.css">
+  <script type="module" crossorigin src="/VaporSend/assets/index-19-xh9jV.js"></script>
+  <link rel="stylesheet" crossorigin href="/VaporSend/assets/index-DAoAgGZi.css">
 </head>
 <body>
   <div class="app-container">
@@ -188,13 +188,24 @@
           </div>
 
           <div class="scanner-tuning-bar">
-            <div class="zoom-control">
-              <label for="camera-zoom-slider">Zoom: <span id="zoom-value-label">1.0x</span></label>
-              <input type="range" id="camera-zoom-slider" min="1" max="3" step="0.25" value="1">
+            <div class="tuning-sliders">
+              <div class="zoom-control">
+                <label for="camera-zoom-slider">Zoom: <span id="zoom-value-label">1.0x</span></label>
+                <input type="range" id="camera-zoom-slider" min="1" max="3" step="0.25" value="1">
+              </div>
+              <div class="zoom-control hidden" id="focus-control-container">
+                <label for="camera-focus-slider">Focus: <span id="focus-value-label">Auto</span></label>
+                <input type="range" id="camera-focus-slider" min="0" max="100" step="1" value="50">
+              </div>
             </div>
-            <button class="btn btn-secondary btn-sm btn-primary" id="btn-toggle-contrast" title="Boost contrast to cut through phone screen glare">
-              Anti-Glare Boost: ON
-            </button>
+            <div class="tuning-buttons">
+              <button class="btn btn-secondary btn-sm" id="btn-toggle-focus-lock" title="Lock camera focus so it stops hunting while scanning">
+                Lock Focus
+              </button>
+              <button class="btn btn-secondary btn-sm btn-primary" id="btn-toggle-contrast" title="Boost contrast to cut through phone screen glare">
+                Anti-Glare: ON
+              </button>
+            </div>
           </div>
 
           <div class="video-viewport">
@@ -248,7 +259,7 @@
     </main>
 
     <footer class="app-footer">
-      <p>v1.0.11 &bull; Built on 2026-11-15 03:21 PST</p>
+      <p>v1.0.12 &bull; Built on 2026-11-15 03:32 PST</p>
     </footer>
   </div>
   
