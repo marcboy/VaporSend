@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script type="module" crossorigin src="/VaporSend/assets/index-19-xh9jV.js"></script>
-  <link rel="stylesheet" crossorigin href="/VaporSend/assets/index-DAoAgGZi.css">
+  <script type="module" crossorigin src="/VaporSend/assets/index-7L-sZmC2.js"></script>
+  <link rel="stylesheet" crossorigin href="/VaporSend/assets/index-DswHTVJZ.css">
 </head>
 <body>
   <div class="app-container">
@@ -108,6 +108,14 @@
             <div class="progress-bar-outer">
               <div class="progress-bar-inner" id="send-progress-bar" style="width: 0%;"></div>
             </div>
+            <!-- Interactive Sender Chunks Filter Grid -->
+            <div class="chunks-grid-container" id="sender-chunks-grid-container">
+              <div class="grid-header">
+                <label id="sender-filter-label">Tap chunks to loop only missing ones (All active)</label>
+                <button class="btn btn-secondary btn-xs hidden" id="btn-reset-sender-filter">Loop All</button>
+              </div>
+              <div class="chunks-grid sender-grid" id="sender-chunks-grid"></div>
+            </div>
           </div>
 
           <div class="stream-controls">
@@ -157,6 +165,14 @@
                 <select id="antiglare-select" class="select-input" style="max-width: 100%; height: 32px; padding: 2px 8px; font-size: 0.8rem;">
                   <option value="antiglare" selected>Anti-Glare (Webcam)</option>
                   <option value="bright">Full Bright White</option>
+                </select>
+              </div>
+              <div class="setting-item">
+                <label for="fountain-select">Fountain Repair</label>
+                <select id="fountain-select" class="select-input" style="max-width: 100%; height: 32px; padding: 2px 8px; font-size: 0.8rem;">
+                  <option value="smart" selected>Smart (After Pass 1)</option>
+                  <option value="always">Always Interleave</option>
+                  <option value="off">Off (Normal Loop)</option>
                 </select>
               </div>
             </div>
@@ -226,6 +242,9 @@
             <div class="progress-bar-outer">
               <div class="progress-bar-inner" id="recv-progress-bar" style="width: 0%;"></div>
             </div>
+            <div class="missing-chunks-banner hidden" id="missing-chunks-banner">
+              Still needed: None
+            </div>
             <!-- Chunks Grid -->
             <div class="chunks-grid-container">
               <div class="grid-header">
@@ -259,7 +278,7 @@
     </main>
 
     <footer class="app-footer">
-      <p>v1.0.13 &bull; Built on 2026-11-15 03:33 PST</p>
+      <p>v1.0.14 &bull; Built on 2026-11-15 05:50 PST</p>
     </footer>
   </div>
   
