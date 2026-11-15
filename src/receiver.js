@@ -34,6 +34,8 @@ export class Receiver {
     this.isMirrored = false;
     this.zoomLevel = 1.0;
     this.focusLocked = false;
+    this.autoFocusLocked = false;
+    this.focusWatchdogTimer = null;
     this.contrastBoost = true;
     this.isTickBusy = false;
 
@@ -95,12 +97,12 @@ export class Receiver {
     });
 
     this.btnToggleFocusLock?.addEventListener('click', () => {
-      this.setFocusLock(!this.focusLocked);
+      this.setFocusLock(!this.focusLocked, false);
     });
 
     this.video?.addEventListener('click', () => {
       if (this.stream) {
-        this.setFocusLock(!this.focusLocked);
+        this.setFocusLock(!this.focusLocked, false);
       }
     });
 
@@ -243,8 +245,14 @@ export class Receiver {
     }
   }
 
-  setFocusLock(locked) {
+  setFocusLock(locked, isAuto = false) {
+    if (this.focusWatchdogTimer) {
+      clearTimeout(this.focusWatchdogTimer);
+      this.focusWatchdogTimer = null;
+    }
+
     this.focusLocked = locked;
+    this.autoFocusLocked = locked && isAuto;
     this.updateFocusLockUI();
 
     if (!this.stream) return;
@@ -262,7 +270,7 @@ export class Receiver {
           if (caps.focusDistance && settings.focusDistance !== undefined) {
             adv.focusDistance = settings.focusDistance;
             if (this.focusSlider) this.focusSlider.value = settings.focusDistance;
-            if (this.focusValueLabel) this.focusValueLabel.textContent = 'Locked';
+            if (this.focusValueLabel) this.focusValueLabel.textContent = isAuto ? 'Auto-Locked' : 'Locked';
           }
         } else if (caps.focusMode && caps.focusMode.includes('single-shot')) {
           adv.focusMode = 'single-shot';
@@ -291,6 +299,19 @@ export class Receiver {
     } catch (e) {
       // Ignore focus lock errors on fixed-focus lenses
     }
+  }
+
+  bumpAutoFocusWatchdog() {
+    if (!this.autoFocusLocked) return;
+    if (this.focusWatchdogTimer) {
+      clearTimeout(this.focusWatchdogTimer);
+    }
+    // If no QR code is decoded for 2 seconds (e.g. phone moved), unlock focus so the camera refocuses itself
+    this.focusWatchdogTimer = setTimeout(() => {
+      if (this.isDecoding && this.autoFocusLocked) {
+        this.setFocusLock(false, false);
+      }
+    }, 2000);
   }
 
   updateFocusLockUI() {
@@ -379,6 +400,14 @@ export class Receiver {
   stopCamera() {
     this.isDecoding = false;
     this.isTickBusy = false;
+    if (this.focusWatchdogTimer) {
+      clearTimeout(this.focusWatchdogTimer);
+      this.focusWatchdogTimer = null;
+    }
+    // Restore continuous focus before closing track so the OS webcam driver isn't left locked in manual mode
+    if (this.stream && this.focusLocked) {
+      this.setFocusLock(false, false);
+    }
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
@@ -524,6 +553,12 @@ export class Receiver {
   handleDecodedQR(data) {
     const chunk = parseChunk(data);
     if (!chunk) return; // Not a valid chunk for our app
+
+    // Auto-lock focus when QR codes are actively decoding, and auto-unlock if scanning stalls for 2s
+    if (!this.focusLocked) {
+      this.setFocusLock(true, true);
+    }
+    this.bumpAutoFocusWatchdog();
     
     // Check if this is a new transfer session
     if (this.currentSessionId !== chunk.sessionId) {
