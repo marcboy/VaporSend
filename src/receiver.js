@@ -17,12 +17,28 @@ export class Receiver {
     // DOM Elements
     this.video = document.getElementById('camera-video');
     this.canvas = document.getElementById('camera-canvas');
-    this.ctx = this.canvas.getContext('2d');
+    this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
     this.cameraSelect = document.getElementById('camera-select');
     this.btnToggleMirror = document.getElementById('btn-toggle-mirror');
     this.btnToggleCamera = document.getElementById('btn-toggle-camera');
+    this.zoomSlider = document.getElementById('camera-zoom-slider');
+    this.zoomValueLabel = document.getElementById('zoom-value-label');
+    this.btnToggleContrast = document.getElementById('btn-toggle-contrast');
     
     this.isMirrored = false;
+    this.zoomLevel = 1.0;
+    this.contrastBoost = true;
+    this.isTickBusy = false;
+
+    // Initialize native hardware-accelerated BarcodeDetector when supported
+    this.barcodeDetector = null;
+    if ('BarcodeDetector' in window) {
+      try {
+        this.barcodeDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
+      } catch (e) {
+        this.barcodeDetector = null;
+      }
+    }
     
     this.progressPanel = document.getElementById('receive-progress-panel');
     this.fileInfoText = document.getElementById('recv-file-info');
@@ -55,6 +71,25 @@ export class Receiver {
         this.startCamera();
       }
     });
+
+    this.zoomSlider?.addEventListener('input', (e) => {
+      this.zoomLevel = parseFloat(e.target.value) || 1.0;
+      if (this.zoomValueLabel) {
+        this.zoomValueLabel.textContent = `${this.zoomLevel.toFixed(2).replace(/\.00$/, '.0').replace(/(\.\d)0$/, '$1')}x`;
+      }
+      this.applyVideoTransform();
+      this.applyHardwareZoom();
+    });
+
+    this.btnToggleContrast?.addEventListener('click', () => {
+      this.contrastBoost = !this.contrastBoost;
+      this.btnToggleContrast.textContent = `Anti-Glare Boost: ${this.contrastBoost ? 'ON' : 'OFF'}`;
+      if (this.contrastBoost) {
+        this.btnToggleContrast.classList.add('btn-primary');
+      } else {
+        this.btnToggleContrast.classList.remove('btn-primary');
+      }
+    });
     
     this.btnResetRecv.addEventListener('click', () => this.resetReceiver());
     this.btnDownloadResult.addEventListener('click', () => this.downloadFile());
@@ -63,9 +98,12 @@ export class Receiver {
 
   async detectCameras() {
     try {
-      // Prompt permission first to get device labels
-      await navigator.mediaDevices.getUserMedia({ video: true });
+      // Prompt permission first to get device labels, then immediately release the temporary stream
+      // so the webcam hardware isn't locked at default 640x480 resolution.
+      const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
       const devices = await navigator.mediaDevices.enumerateDevices();
+      tempStream.getTracks().forEach(track => track.stop());
+
       const videoDevices = devices.filter(device => device.kind === 'videoinput');
       
       this.cameraSelect.innerHTML = '';
@@ -93,15 +131,35 @@ export class Receiver {
     }
   }
 
+  applyVideoTransform() {
+    const scaleX = this.isMirrored ? -this.zoomLevel : this.zoomLevel;
+    const scaleY = this.zoomLevel;
+    this.video.style.transform = `scale(${scaleX}, ${scaleY})`;
+  }
+
+  applyHardwareZoom() {
+    if (!this.stream) return;
+    const track = this.stream.getVideoTracks()[0];
+    if (!track || !track.getCapabilities) return;
+    try {
+      const caps = track.getCapabilities();
+      if (caps.zoom) {
+        const targetZoom = Math.min(caps.zoom.max, Math.max(caps.zoom.min, this.zoomLevel));
+        track.applyConstraints({ advanced: [{ zoom: targetZoom }] }).catch(() => {});
+      }
+    } catch (e) {
+      // Ignore if hardware zoom is unsupported
+    }
+  }
+
   toggleMirror() {
     this.isMirrored = !this.isMirrored;
     if (this.isMirrored) {
-      this.video.classList.add('mirrored');
       if (this.btnToggleMirror) this.btnToggleMirror.classList.add('btn-primary');
     } else {
-      this.video.classList.remove('mirrored');
       if (this.btnToggleMirror) this.btnToggleMirror.classList.remove('btn-primary');
     }
+    this.applyVideoTransform();
   }
 
   async toggleCamera() {
@@ -119,25 +177,53 @@ export class Receiver {
     }
 
     const deviceId = this.cameraSelect.value;
-    const constraints = {
-      video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'environment' }
+    // Request 1080p HD so fixed-focus computer webcams resolve fine QR modules from 1-2 ft away
+    const videoConstraints = {
+      width: { ideal: 1920 },
+      height: { ideal: 1080 }
     };
+    if (deviceId) {
+      videoConstraints.deviceId = { exact: deviceId };
+    } else {
+      videoConstraints.facingMode = { ideal: 'environment' };
+    }
     
-    // Auto-detect front camera (selfie camera) and auto-mirror if user hasn't explicitly set mirror mode
+    // Auto-detect front camera (selfie camera) and auto-mirror
     const selectedOption = this.cameraSelect.options[this.cameraSelect.selectedIndex];
     const label = selectedOption ? selectedOption.textContent.toLowerCase() : '';
-    if (label.includes('front') || label.includes('user') || label.includes('facetime')) {
+    if (label.includes('front') || label.includes('user') || label.includes('facetime') || label.includes('integrated') || label.includes('webcam')) {
       this.isMirrored = true;
-      this.video.classList.add('mirrored');
       if (this.btnToggleMirror) this.btnToggleMirror.classList.add('btn-primary');
     } else if (label.includes('back') || label.includes('environment')) {
       this.isMirrored = false;
-      this.video.classList.remove('mirrored');
       if (this.btnToggleMirror) this.btnToggleMirror.classList.remove('btn-primary');
     }
+    this.applyVideoTransform();
     
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      this.stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+
+      // Enable continuous autofocus if the camera supports it
+      const track = this.stream.getVideoTracks()[0];
+      if (track && track.getCapabilities) {
+        try {
+          const caps = track.getCapabilities();
+          const advanced = {};
+          if (caps.focusMode && caps.focusMode.includes('continuous')) {
+            advanced.focusMode = 'continuous';
+          }
+          if (caps.exposureMode && caps.exposureMode.includes('continuous')) {
+            advanced.exposureMode = 'continuous';
+          }
+          if (Object.keys(advanced).length > 0) {
+            track.applyConstraints({ advanced: [advanced] }).catch(() => {});
+          }
+        } catch (e) {
+          // Ignore capability query errors
+        }
+      }
+      this.applyHardwareZoom();
+
       this.video.srcObject = this.stream;
       this.video.setAttribute('playsinline', true); // critical for iOS
       this.video.play();
@@ -147,11 +233,11 @@ export class Receiver {
       this.btnToggleCamera.classList.add('btn-outline');
       
       this.isDecoding = true;
-      this.video.addEventListener('loadedmetadata', () => {
-        this.canvas.width = this.video.videoWidth;
-        this.canvas.height = this.video.videoHeight;
+      this.video.onloadedmetadata = () => {
+        this.canvas.width = this.video.videoWidth || 1280;
+        this.canvas.height = this.video.videoHeight || 720;
         this.tick();
-      });
+      };
     } catch (err) {
       console.error('Camera open failed:', err);
       alert('Could not start camera. Check permissions and try again.');
@@ -160,6 +246,7 @@ export class Receiver {
 
   stopCamera() {
     this.isDecoding = false;
+    this.isTickBusy = false;
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
@@ -176,45 +263,130 @@ export class Receiver {
     this.btnToggleCamera.classList.add('btn-secondary');
   }
 
-  tick() {
-    if (!this.isDecoding) return;
-    
-    if (this.video.readyState === this.video.HAVE_ENOUGH_DATA) {
-      // Draw video frame to hidden canvas
-      this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
-      
-      let attempts = 0;
-      const maxQRsPerFrame = 4; // Scan up to 4 QRs side-by-side in one frame
-      
-      while (attempts < maxQRsPerFrame) {
-        const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-        
-        // Attempt decoding
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: 'dontInvert'
-        });
-        
-        if (code && code.data) {
-          this.handleDecodedQR(code.data);
-          
-          // Redact the scanned QR code area with a white polygon to find the next ones
-          this.ctx.fillStyle = '#ffffff';
-          this.ctx.beginPath();
-          this.ctx.moveTo(code.location.topLeftCorner.x, code.location.topLeftCorner.y);
-          this.ctx.lineTo(code.location.topRightCorner.x, code.location.topRightCorner.y);
-          this.ctx.lineTo(code.location.bottomRightCorner.x, code.location.bottomRightCorner.y);
-          this.ctx.lineTo(code.location.bottomLeftCorner.x, code.location.bottomLeftCorner.y);
-          this.ctx.closePath();
-          this.ctx.fill();
-          
-          attempts++;
-        } else {
-          break; // No more QR codes detected
-        }
+  drawZoomedFrameToCanvas() {
+    const vw = this.video.videoWidth;
+    const vh = this.video.videoHeight;
+    if (!vw || !vh) return false;
+
+    const cropW = vw / this.zoomLevel;
+    const cropH = vh / this.zoomLevel;
+    const cropX = (vw - cropW) / 2;
+    const cropY = (vh - cropH) / 2;
+
+    // Keep processing canvas capped around 1280px wide for fast decoding while preserving crispness
+    const targetW = Math.min(1280, Math.round(cropW));
+    const targetH = Math.min(960, Math.round(cropH));
+    if (this.canvas.width !== targetW || this.canvas.height !== targetH) {
+      this.canvas.width = targetW;
+      this.canvas.height = targetH;
+    }
+
+    this.ctx.drawImage(this.video, cropX, cropY, cropW, cropH, 0, 0, targetW, targetH);
+    return true;
+  }
+
+  applyAntiGlareContrast(imageData) {
+    const data = imageData.data;
+    const len = data.length;
+
+    // Compute luminance histogram min/max (ignoring extreme 1% outliers)
+    let sum = 0;
+    const pixelCount = len >> 2;
+    for (let i = 0; i < len; i += 16) {
+      sum += (data[i] * 77 + data[i + 1] * 150 + data[i + 2] * 29) >> 8;
+    }
+    const avgLuma = sum / (pixelCount >> 2);
+    // Phone screens have bright backgrounds; threshold slightly below local average to recover washed-out dark modules
+    const threshold = Math.min(210, Math.max(90, avgLuma * 0.92));
+
+    for (let i = 0; i < len; i += 4) {
+      const luma = (data[i] * 77 + data[i + 1] * 150 + data[i + 2] * 29) >> 8;
+      // High-slope contrast stretch centered around threshold
+      const stretched = Math.min(255, Math.max(0, ((luma - threshold) * 3.2) + 128));
+      data[i] = stretched;
+      data[i + 1] = stretched;
+      data[i + 2] = stretched;
+    }
+  }
+
+  scanWithJsQR(useContrastBoost = false) {
+    let foundCount = 0;
+    const maxQRsPerFrame = 4;
+
+    while (foundCount < maxQRsPerFrame) {
+      const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+      if (useContrastBoost) {
+        this.applyAntiGlareContrast(imageData);
+      }
+
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: 'dontInvert'
+      });
+
+      if (code && code.data) {
+        this.handleDecodedQR(code.data);
+        foundCount++;
+
+        // Redact the scanned QR code area with a white polygon to find any adjacent QR codes
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.beginPath();
+        this.ctx.moveTo(code.location.topLeftCorner.x, code.location.topLeftCorner.y);
+        this.ctx.lineTo(code.location.topRightCorner.x, code.location.topRightCorner.y);
+        this.ctx.lineTo(code.location.bottomRightCorner.x, code.location.bottomRightCorner.y);
+        this.ctx.lineTo(code.location.bottomLeftCorner.x, code.location.bottomLeftCorner.y);
+        this.ctx.closePath();
+        this.ctx.fill();
+      } else {
+        break;
       }
     }
-    
-    this.animationFrameId = requestAnimationFrame(() => this.tick());
+
+    return foundCount;
+  }
+
+  async tick() {
+    if (!this.isDecoding) return;
+    if (this.isTickBusy) {
+      this.animationFrameId = requestAnimationFrame(() => this.tick());
+      return;
+    }
+
+    this.isTickBusy = true;
+    try {
+      if (this.video.readyState === this.video.HAVE_ENOUGH_DATA && this.drawZoomedFrameToCanvas()) {
+        let detected = 0;
+
+        // 1. Try native hardware-accelerated BarcodeDetector first (handles blur, glare, and multi-QR best)
+        if (this.barcodeDetector) {
+          try {
+            const barcodes = await this.barcodeDetector.detect(this.canvas);
+            for (const barcode of barcodes) {
+              if (barcode.rawValue) {
+                this.handleDecodedQR(barcode.rawValue);
+                detected++;
+              }
+            }
+          } catch (e) {
+            // Fallback to jsQR if BarcodeDetector fails
+          }
+        }
+
+        // 2. Fallback to jsQR (normal pass, then anti-glare contrast-boosted pass if enabled)
+        if (detected === 0 && this.isDecoding) {
+          detected = this.scanWithJsQR(false);
+          if (detected === 0 && this.contrastBoost && this.isDecoding) {
+            this.drawZoomedFrameToCanvas();
+            this.scanWithJsQR(true);
+          }
+        }
+      }
+    } finally {
+      this.isTickBusy = false;
+    }
+
+    if (this.isDecoding) {
+      this.animationFrameId = requestAnimationFrame(() => this.tick());
+    }
   }
 
   handleDecodedQR(data) {

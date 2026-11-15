@@ -10,10 +10,11 @@ export class Sender {
     this.playInterval = null;
     
     // UI Settings
-    this.fps = 10;
-    this.chunkSize = 400; // Character capacity per QR code
+    this.fps = 8;
+    this.chunkSize = 250; // Character capacity per QR code (250 gives large, easy-to-focus modules)
     this.encoding = 'base45'; // Encoding format: base45 or base64
     this.gridSize = 1; // Number of QRs to show simultaneously
+    this.antiGlare = true; // Dim white background slightly to prevent webcam exposure blowout
     this.filename = '';
     this.rawContent = null; // Can be string (text) or ArrayBuffer (file)
 
@@ -39,6 +40,7 @@ export class Sender {
     this.chunkSizeSlider = document.getElementById('chunk-size-slider');
     this.encodingSelect = document.getElementById('encoding-select');
     this.gridSelect = document.getElementById('grid-select');
+    this.antiGlareSelect = document.getElementById('antiglare-select');
 
     this.initEventListeners();
   }
@@ -144,6 +146,11 @@ export class Sender {
         if (wasPlaying) this.play();
       }
     });
+
+    this.antiGlareSelect?.addEventListener('change', (e) => {
+      this.antiGlare = e.target.value === 'antiglare';
+      this.renderCurrentQR();
+    });
   }
 
   handleFileSelected(file) {
@@ -202,10 +209,11 @@ export class Sender {
     if (this.chunks.length === 0) return;
     
     this.qrContainer.innerHTML = '';
-    this.qrContainer.className = `qr-display-area cols-${this.gridSize}`;
+    this.qrContainer.className = `qr-display-area cols-${this.gridSize}${this.antiGlare ? ' antiglare' : ''}`;
     
     const startIdx = this.currentIndex * this.gridSize;
     const endIdx = Math.min(startIdx + this.gridSize, this.chunks.length);
+    const lightColor = this.antiGlare ? '#d1d5db' : '#ffffff';
     
     for (let i = startIdx; i < endIdx; i++) {
       const canvas = document.createElement('canvas');
@@ -215,11 +223,11 @@ export class Sender {
       const text = this.chunks[i];
       try {
         await QRCode.toCanvas(canvas, text, {
-          width: 320,
-          margin: 1,
+          width: 400,
+          margin: 3,
           color: {
             dark: '#000000',
-            light: '#ffffff'
+            light: lightColor
           },
           errorCorrectionLevel: 'M'
         });

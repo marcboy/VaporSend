@@ -120,7 +120,9 @@ export function prepareChunks(data, filename, maxChunkSize = 400, encoding = 'ba
   const totalLength = encodedContent.length;
   const numChunks = Math.ceil(totalLength / maxChunkSize);
   
-  const sessionId = Math.floor(Math.random() * 0xffff).toString(16).padStart(4, '0');
+  const sessionId = Math.floor(Math.random() * 0xffff).toString(16).toUpperCase().padStart(4, '0');
+  const encodedFilename = uint8ArrayToBase45(new TextEncoder().encode(filename));
+  const encCode = encoding === 'base45' ? '45' : '64';
   
   const chunks = [];
   for (let i = 0; i < numChunks; i++) {
@@ -128,9 +130,8 @@ export function prepareChunks(data, filename, maxChunkSize = 400, encoding = 'ba
     const end = Math.min(start + maxChunkSize, totalLength);
     const slice = encodedContent.slice(start, end);
     
-    const safeFilename = encodeURIComponent(filename).replace(/\|/g, '%7C');
-    const encCode = encoding === 'base45' ? '45' : '64';
-    const chunkText = `${sessionId}|${numChunks}|${i}|${safeFilename}|${encCode}|${slice}`;
+    // Use strictly QR Alphanumeric characters (0-9, A-Z, :) so Base45 stays in compact Alphanumeric QR mode
+    const chunkText = `V1:${sessionId}:${numChunks}:${i}:${encCode}:${encodedFilename.length}:${encodedFilename}${slice}`;
     chunks.push(chunkText);
   }
   
@@ -141,6 +142,43 @@ export function prepareChunks(data, filename, maxChunkSize = 400, encoding = 'ba
  * Parses a scanned QR code chunk.
  */
 export function parseChunk(qrText) {
+  if (!qrText) return null;
+
+  // V1 Alphanumeric-optimized format: V1:SESSION:TOTAL:INDEX:ENC:FNLEN:ENCODED_FILENAME_AND_PAYLOAD
+  if (qrText.startsWith('V1:')) {
+    const parts = qrText.split(':');
+    if (parts.length < 7) return null;
+
+    const sessionId = parts[1];
+    const total = parseInt(parts[2], 10);
+    const index = parseInt(parts[3], 10);
+    const encodingCode = parts[4];
+    const fnLen = parseInt(parts[5], 10);
+    const rest = parts.slice(6).join(':');
+
+    if (isNaN(total) || isNaN(index) || isNaN(fnLen) || !sessionId || rest.length < fnLen) {
+      return null;
+    }
+
+    try {
+      const encodedFilename = rest.slice(0, fnLen);
+      const payload = rest.slice(fnLen);
+      const filename = new TextDecoder().decode(base45ToUint8Array(encodedFilename));
+
+      return {
+        sessionId,
+        total,
+        index,
+        filename,
+        encoding: encodingCode === '45' ? 'base45' : 'base64',
+        payload
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Legacy pipe-delimited format fallback
   const parts = qrText.split('|');
   if (parts.length < 6) return null;
   
