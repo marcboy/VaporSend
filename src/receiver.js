@@ -187,6 +187,18 @@ export class Receiver {
       const caps = track.getCapabilities();
       const settings = track.getSettings ? track.getSettings() : {};
 
+      // Restore continuous autofocus & auto-exposure by default so the camera focuses itself automatically
+      const advanced = {};
+      if (caps.focusMode && caps.focusMode.includes('continuous')) {
+        advanced.focusMode = 'continuous';
+      }
+      if (caps.exposureMode && caps.exposureMode.includes('continuous')) {
+        advanced.exposureMode = 'continuous';
+      }
+      if (Object.keys(advanced).length > 0) {
+        track.applyConstraints({ advanced: [advanced] }).catch(() => {});
+      }
+
       if (caps.focusDistance && this.focusControlContainer && this.focusSlider) {
         this.focusControlContainer.classList.remove('hidden');
         this.focusSlider.min = caps.focusDistance.min;
@@ -512,11 +524,6 @@ export class Receiver {
   handleDecodedQR(data) {
     const chunk = parseChunk(data);
     if (!chunk) return; // Not a valid chunk for our app
-
-    // Auto-lock camera focus as soon as the first QR frame decodes so the lens stops hunting during animation
-    if (!this.focusLocked) {
-      this.setFocusLock(true);
-    }
     
     // Check if this is a new transfer session
     if (this.currentSessionId !== chunk.sessionId) {
